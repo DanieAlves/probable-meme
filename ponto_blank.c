@@ -584,67 +584,81 @@ void pb_mmcss_reverter(void)
  *  Original: FUN_1359f8b0 @ 0x1359f8b0
  *
  *  Chamado pelo TPointBlankStabilityMonitor ao detectar que o jogo encerrou.
- *  Se a contagem de crashes hoje ultrapassar 2, exibe uma mensagem de aviso
- *  com botao "Veja como reparar" e gera uma chave de log diario.
+ *  Se o jogo fechou mais de 2 vezes hoje, publica UMA notificacao do dia
+ *  (identificada pela chave "pb-crash-YYYYMMDD") e marca o aviso como dado.
  *
- *  Strings do binario:
- *    "%d encerramentos inesperados hoje. Veja como reparar."    (0x1359fa4c)
- *    "Detectamos %d encerramentos inesperados do PointBlank hoje. " (0x135a00e4)
- *    "pb-crash-YYYYMMDD..."  (chave do log diario, montada em runtime)
+ *  Strings do binario (UTF-16LE):
+ *    "%d encerramentos inesperados hoje. Veja como reparar."      (0x1359fa4c)
+ *    "Detectamos %d encerramentos inesperados do PointBlank hoje. Abra esta
+ *     notificacao para ver as recomendacoes de reparacao."        (0x1359fac4)
+ *    "yyyymmdd"                                                   (0x1359fbc4)
+ *    "O PointBlank fechou varias vezes"   (titulo da notificacao, 0x1359fbe4)
+ *    "pb-crash-"                          (prefixo da chave,      0x1359fc34)
  *
- *  Condicoes para exibir o aviso:
- *    ctx->contagem_crashes_hoje > 2
- *    ctx->crashes_suprimidos == false  (+0x78)
- *    global DAT_138118c0 (flag "mostrar avisos") == false
+ *  Condicoes para notificar (todas verificadas no inicio da funcao):
+ *    ctx->contagem_crashes_hoje > 2                       (+0x68)
+ *    ctx->crashes_suprimidos == false                     (+0x78, "ja avisado")
+ *    *(*PTR_DAT_13811668 + 0xbc) == 0                     (flag global de
+ *                                                          supressao de avisos)
+ *
+ *  Depois de publicar com sucesso, o binario grava +0x78 = 1 e chama
+ *  FUN_1359e8ec(ctx) -- por isso o aviso aparece no maximo uma vez.
+ *  INFERIDO: FUN_1359e8ec persiste o estado diario (nao decompilada aqui).
  */
 void pb_verificar_crashes(TPointBlankMantain *ctx)
 {
-    /* So exibe se: mais de 2 crashes hoje, nao suprimido, global ok. */
     if (ctx->contagem_crashes_hoje <= 2
         || ctx->crashes_suprimidos
-        || g_suprimir_avisos_crash)
+        || *((uint8_t *)*g_config_app + 0xbc) != 0)   /* PTR_DAT_13811668 */
         return;
 
-    /* Formata as duas mensagens de UI. */
-    DelphiStr msg_botao = NULL;
-    str_formatar(&msg_botao,
+    /* Texto curto e texto detalhado da notificacao (FUN_1316ec8c = Format). */
+    DelphiStr msg_curta = NULL;      /* [EBP-4] */
+    str_formatar(&msg_curta,
         L"%d encerramentos inesperados hoje. Veja como reparar.",
         ctx->contagem_crashes_hoje);
 
-    DelphiStr msg_principal = NULL;
-    str_formatar(&msg_principal,
-        L"Detectamos %d encerramentos inesperados do PointBlank hoje. ",
+    DelphiStr msg_detalhe = NULL;    /* [EBP-8] */
+    str_formatar(&msg_detalhe,
+        L"Detectamos %d encerramentos inesperados do PointBlank hoje. "
+        L"Abra esta notificacao para ver as recomendacoes de reparacao.",
         ctx->contagem_crashes_hoje);
 
-    /* Monta a chave do log diario: "pb-crash-YYYYMMDD" + sufixo.
-     * FUN_13171f58(L"yyyymmdd", ...) formata a data atual como string.
-     * FUN_1314c828 concatena: "pb-crash-" + data_str. */
+    void *notificador = obter_notificador();               /* FUN_134ad1c8 */
+
+    /* Chave unica por dia: "pb-crash-" + FormatDateTime("yyyymmdd", Now).
+     * FUN_13170f54 = Now; FUN_13171f58 recebe o FormatSettings em
+     * PTR_DAT_138118c0; FUN_1314c828 = concatenacao de 2 strings.         */
     DelphiStr data_str  = NULL;
-    DelphiStr chave_log = NULL;
-    obter_data_formatada(L"yyyymmdd", &data_str);         /* FUN_13171f58 */
-    str_combinar_caminho(&chave_log, L"pb-crash-", data_str, /*separador*/NULL);
+    DelphiStr chave_dia = NULL;
+    formatar_data(L"yyyymmdd", g_format_settings, &data_str, agora());
+    str_concat(&chave_dia, L"pb-crash-", data_str);
 
-    /* FUN_134ae4cc(contexto_app, chave_log, 2) -- persiste/consulta o log
-     * de crashes. Retorno indica se a contagem ja foi registrada hoje. */
-    bool ja_logado = registrar_crash_no_log(g_contexto_app, chave_log, 2);
-
-    /* Exibe a mensagem de aviso na UI (FUN_1316ec8c formata e agenda). */
-    if (!ja_logado) {
-        exibir_aviso_crash(msg_botao, msg_principal);
+    /* FUN_134ae4cc(notificador, chave, 2, titulo, msg_curta, msg_detalhe, 0)
+     * -> true quando a notificacao foi publicada.                          */
+    bool publicada = notificador_publicar(notificador, chave_dia, 2,
+                                          L"O PointBlank fechou varias vezes",
+                                          msg_curta, msg_detalhe, 0);
+    if (publicada) {
+        ctx->crashes_suprimidos = true;                    /* +0x78 = 1    */
+        pb_salvar_estado_diario(ctx);                      /* FUN_1359e8ec */
     }
 }
 
-extern bool  g_suprimir_avisos_crash;          /* DAT_138118c0 (offset +0xbc) */
-extern void *g_contexto_app;                   /* PTR_DAT_13811668 */
-extern void  str_formatar(DelphiStr *dst,
-                          const wchar_t *fmt, ...); /* FUN_1316ec8c */
-extern void  obter_data_formatada(const wchar_t *fmt,
-                                  DelphiStr *dst);  /* FUN_13171f58 */
-extern bool  registrar_crash_no_log(void *app,
-                                    DelphiStr chave,
-                                    int modo);      /* FUN_134ae4cc */
-extern void  exibir_aviso_crash(DelphiStr msg_botao,
-                                DelphiStr msg_principal); /* FUN_134ad1c8 area */
+extern void **g_config_app;                    /* PTR_DAT_13811668 (+0xbc = suprimir avisos) */
+extern void  *g_format_settings;               /* PTR_DAT_138118c0 (TFormatSettings) */
+extern void   str_formatar(DelphiStr *dst,
+                           const wchar_t *fmt, ...);       /* FUN_1316ec8c */
+extern double agora(void);                                  /* FUN_13170f54 */
+extern void   formatar_data(const wchar_t *fmt, void *fs,
+                            DelphiStr *dst, double quando); /* FUN_13171f58 */
+/* str_concat (FUN_1314c828) e declarado junto aos auxiliares da secao 11. */
+extern void  *obter_notificador(void);                      /* FUN_134ad1c8 */
+extern bool   notificador_publicar(void *n, DelphiStr chave, int tipo,
+                                   const wchar_t *titulo,
+                                   DelphiStr curta, DelphiStr detalhe,
+                                   int extra);              /* FUN_134ae4cc */
+extern void   pb_salvar_estado_diario(TPointBlankMantain *ctx); /* FUN_1359e8ec */
 
 
 /* ===========================================================================
@@ -1081,25 +1095,44 @@ extern void  PTR_FUN_1357c804;  /* ponteiro para callback da thread de manutenca
  * ===========================================================================
  *
  *  A "Limpeza Inteligente" e um limpa-arquivos recursivo com tres camadas de
- *  seguranca: (a) nao apaga juncoes/symlinks, (b) usa prefixo \\?\ para
- *  caminhos longos, (c) reporta negados, em-uso e falhas separadamente.
+ *  seguranca: (a) NAO entra em juncoes/symlinks -- remove apenas o proprio
+ *  link (RemoveDirectoryW), nunca o conteudo do alvo; (b) usa prefixo \\?\
+ *  para caminhos longos; (c) reporta negados, em-uso e falhas separadamente.
+ *  A varredura pode ser cancelada pelo usuario a qualquer momento.
  *
  *  FUNCOES MAPEADAS
  *    FUN_13674090  @  0x13674090  -- scanner recursivo de diretorio
- *    FUN_13673ee0  @  0x13673ee0  -- deleta arquivo individual
+ *    FUN_13673ee0  @  0x13673ee0  -- deleta arquivo individual (DeleteFileW)
+ *    FUN_13673fb4  @  0x13673fb4  -- remove diretorio vazio ou link (RemoveDirectoryW)
  *    FUN_13673dc4  @  0x13673dc4  -- normaliza caminho (adiciona \\?\)
- *    FUN_13674088  @  0x13674088  -- testa se entrada e juncao/symlink
+ *    FUN_13674088  @  0x13674088  -- (attr & 0x400) != 0  -> reparse point
+ *    FUN_1366039c  @  0x1366039c  -- le, de forma atomica, o pedido de
+ *                                    cancelamento em (worker + 0x3b4)
  *
- *  ITENS DE LIMPEZA CONHECIDOS (tabela em 0x1366c900, verificada anteriormente)
- *    chave               alvo (expandido)
- *    prefetch            %WINDIR%\Prefetch\*.pf
- *    driver_extract_cache %SystemDrive%\NVIDIA\DisplayDriver\*
+ *  As tres funcoes de arquivo/diretorio sao procedimentos ANINHADOS (nested
+ *  procedures do Delphi): recebem o frame da funcao externa em param_4 e
+ *  leem dele:  [frame-4] = objeto worker (log e cancelamento)
+ *              [frame-8] = ponteiro para flag de cancelamento (char)
+ *              [frame-0xc]/[frame-0x10] = HMODULE de kernel32 e o ponteiro
+ *                de FindFirstFileExW obtido por GetProcAddress (FUN_1315b19c).
+ *  INFERIDO: o ponteiro de FindFirstFileExW nao e usado dentro do scanner
+ *  (que chama FindFirstFileW); provavelmente serve a outro procedimento
+ *  aninhado da mesma funcao externa.
+ *
+ *  ITENS DE LIMPEZA CONHECIDOS (tabela em 0x1366c900)
+ *    chave                 alvo (antes de expandir variaveis)
+ *    prefetch              "%WINDIR%\Prefetch"                    @ 0x1366ca58
+ *                          label "Cache Prefetch do Windows"      @ 0x1366ca88
+ *    driver_extract_cache  "%SystemDrive%\NVIDIA\DisplayDriver\*" @ 0x1366c8f0
  *
  *  STRINGS DE STATUS (usadas no log interno)
  *    "Executando limpeza..."              @ 0x1365ef18
  *    "Limpeza coordenada: itens preservados (negado=%s, em uso=%s, protecao=%s)"
  *                                         @ 0x13673d30
  *    "Limpeza bloqueada em junction/symlink: "  @ 0x1367456c
+ *        (INFERIDO: usada pela funcao externa quando a RAIZ do item e um
+ *         reparse point; o scanner em si nao referencia esta string)
+ *    "Scan ignorado em junction/symlink: "      @ 0x1366dbc4
  *    "Falha geral na limpeza: "           @ 0x13723144
  *    "Limpeza segura em apenas um clique" @ 0x13642ab8
  *
@@ -1154,113 +1187,142 @@ void limpeza_normalizar_caminho(const DelphiStr caminho, DelphiStr *dst)
     }
 }
 
-/* Deleta um unico arquivo, rastreando o motivo da falha no stats.           */
-void limpeza_deletar_arquivo(const DelphiStr caminho_curto)
+/* Contexto do procedimento externo, lido pelos procedimentos aninhados
+ * atraves do frame (param_4) -- ver cabecalho da secao.                     */
+typedef struct {
+    void   *worker;          /* [frame-4]  : log + pedido de cancelamento     */
+    char   *cancelar;        /* [frame-8]  : flag de cancelamento do usuario  */
+    HMODULE kernel32;        /* [frame-0xc]                                   */
+    void   *pFindFirstFileExW; /* [frame-0x10]                                */
+} TLimpezaFrame;
+
+/* true quando o usuario pediu para cancelar (flag local OU worker+0x3b4).  */
+static bool limpeza_cancelada(TLimpezaFrame *f)
 {
-    /* FUN_13673ee0 @ 0x13673ee0
-     * param_4[-4] = ponteiro para TLimpezaStats da limpeza atual            */
-    DelphiStr  caminho_longo = NULL;
-    TLimpezaStats *s = limpeza_stats_get();
-
-    limpeza_log_arquivo(caminho_curto);           /* FUN_13671600 -- log verbose */
-    limpeza_normalizar_caminho(caminho_curto, &caminho_longo);
-
-    if (!DeleteFileW((LPCWSTR)str_c(caminho_longo))) {
-        DWORD err = GetLastError();
-        if (err == ERROR_ACCESS_DENIED) {
-            /* Tenta tomar posse do arquivo (FUN_136712f0). */
-            if (limpeza_tomar_posse(caminho_longo)) {
-                s->deletado = 1;
-                return;
-            }
-            s->negado_acesso = 1;
-        }
-        if (err == ERROR_SHARING_VIOLATION || err == ERROR_LOCK_VIOLATION) {
-            s->arquivo_em_uso = 1;
-        }
-        s->negado_acesso |= (err == ERROR_ACCESS_DENIED);
-        s->qtd_falhas++;
-    } else {
-        s->deletado = 1;
-    }
+    return *f->cancelar != 0 || limpeza_worker_cancelado(f->worker); /* FUN_1366039c */
 }
 
-/* Verifica se dwFileAttributes indica juncao ou symlink (FILE_ATTRIBUTE_REPARSE_POINT).
- * Retorna verdadeiro = e um reparse point, NAO deve ser recursado.          */
+/* Deleta um unico arquivo, rastreando o motivo da falha no stats.
+ * Retorna true se o arquivo foi removido (direto ou apos tomar posse).     */
+bool limpeza_deletar_arquivo(TLimpezaFrame *f, const DelphiStr caminho_curto)
+{
+    /* FUN_13673ee0 @ 0x13673ee0  (resultado em BL)                          */
+    DelphiStr  caminho_longo = NULL;
+
+    limpeza_log_arquivo(f->worker, caminho_curto); /* FUN_13671600          */
+    limpeza_normalizar_caminho(caminho_curto, &caminho_longo);
+
+    if (DeleteFileW((LPCWSTR)str_c(caminho_longo))) {
+        limpeza_stats_get()->deletado = 1;
+        return true;
+    }
+
+    DWORD err = GetLastError();
+    if (err == ERROR_ACCESS_DENIED && limpeza_tomar_posse(caminho_longo)) {
+        /* FUN_136712f0: toma posse/ajusta ACL e apaga.                      */
+        limpeza_stats_get()->deletado = 1;
+        return true;
+    }
+    if (err == ERROR_SHARING_VIOLATION || err == ERROR_LOCK_VIOLATION)
+        limpeza_stats_get()->arquivo_em_uso = 1;
+    limpeza_stats_get()->qtd_falhas++;
+    if (err == ERROR_ACCESS_DENIED)
+        limpeza_stats_get()->negado_acesso = 1;
+    return false;
+}
+
+/* FUN_13673fb4 @ 0x13673fb4 -- mesmo esquema de limpeza_deletar_arquivo,
+ * mas com RemoveDirectoryW. Aplicado a um REPARSE POINT, remove apenas o
+ * link, sem tocar no diretorio alvo.                                        */
+extern bool limpeza_remover_diretorio(TLimpezaFrame *f, DelphiStr caminho);
+
+/* (dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT 0x400) != 0             */
 extern bool limpeza_e_juncao_symlink(DWORD dwAttribs); /* FUN_13674088 */
 
-/* Scanner recursivo de diretorio. Itera com FindFirstFileW/FindNextFileW,
- * pula '.' e '..', e para cada entrada:
- *   - arquivo normal  -> chama limpeza_deletar_arquivo()
- *   - sub-diretorio   -> verifica juncao/symlink, se nao for, recursao
- * O parametro 'contexto' e o TLimpezaStats da limpeza atual.
- * Retorna true se tudo dentro do diretorio foi deletado com sucesso.        */
-bool limpeza_varrer_diretorio(const DelphiStr dir_path)
+/* Scanner recursivo de diretorio (FindFirstFileW/FindNextFileW).
+ * Retorna true se tudo dentro do diretorio foi removido; false se algo
+ * falhou OU se a limpeza foi cancelada.                                     */
+bool limpeza_varrer_diretorio(TLimpezaFrame *f, const DelphiStr dir_path)
 {
     /* FUN_13674090 @ 0x13674090 */
     WIN32_FIND_DATAW fd;
     HANDLE hFind;
-    DelphiStr  padrao = NULL;
-    DelphiStr  entrada_path = NULL;
+    DelphiStr  dir_barra = NULL, padrao = NULL, padrao_longo = NULL;
+    DelphiStr  nome = NULL, entrada_path = NULL;
     bool  ok = true;
-    TLimpezaStats *s = limpeza_stats_get();
 
-    /* Adiciona \* ao caminho para o padrao de busca */
-    str_concat(&padrao, dir_path, L"\\*");
-    hFind = FindFirstFileW((LPCWSTR)str_c(padrao), &fd);
+    if (limpeza_cancelada(f))
+        return false;
+
+    /* padrao = IncludeTrailingPathDelimiter(dir) + "*"                      */
+    incluir_barra_final(dir_path, &dir_barra);           /* FUN_131776e8     */
+    str_concat(&padrao, dir_barra, L"*");                /* FUN_1314c828     */
+
+    f->kernel32 = GetModuleHandleW(L"kernel32.dll");
+    f->pFindFirstFileExW = NULL;
+    if (f->kernel32 != NULL)
+        f->pFindFirstFileExW = GetProcAddress(f->kernel32, "FindFirstFileExW");
+
+    /* O padrao de busca tambem e convertido para \\?\ (FUN_13673dc4).      */
+    limpeza_normalizar_caminho(padrao, &padrao_longo);
+    hFind = FindFirstFileW((LPCWSTR)str_c(padrao_longo), &fd);
     if (hFind == INVALID_HANDLE_VALUE) {
-        DWORD err = GetLastError();
-        if (err == ERROR_ACCESS_DENIED)
-            s->negado_acesso = 1;
-        return true;  /* diretorio vazio ou sem permissao */
+        if (GetLastError() == ERROR_ACCESS_DENIED)
+            limpeza_stats_get()->negado_acesso = 1;
+        return true;           /* diretorio inacessivel nao conta como falha */
     }
 
-    do {
-        /* Pula entradas especiais */
-        if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0)
-            goto proxima;
+    for (;;) {
+        if (limpeza_cancelada(f)) {          /* checado a cada entrada       */
+            ok = false;
+            break;
+        }
 
-        str_concat(&entrada_path, dir_path, fd.cFileName);
+        str_from_wbuf(&nome, fd.cFileName, MAX_PATH);    /* FUN_1314c674    */
+        if (wcscmp(str_c(nome), L".") != 0 && wcscmp(str_c(nome), L"..") != 0) {
+            incluir_barra_final(dir_path, &dir_barra);   /* FUN_131776e8     */
+            str_concat(&entrada_path, dir_barra, nome);
 
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            /* Sub-diretorio */
-            if (limpeza_e_juncao_symlink(fd.dwFileAttributes)) {
-                /* E uma juncao/symlink -- nao recursamos
-                 * (string: "Limpeza bloqueada em junction/symlink: ") */
-                ok = false;
-            } else {
-                bool sub_ok = limpeza_varrer_diretorio(entrada_path);
-                bool dir_deletado = limpeza_deletar_diretorio(entrada_path);
-                if (dir_deletado) {
-                    s->qtd_pastas++;
-                }
-                if (!sub_ok || !dir_deletado)
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                if (limpeza_deletar_arquivo(f, entrada_path)) {
+                    TLimpezaStats *s = limpeza_stats_get();
+                    s->qtd_arquivos++;
+                    s->bytes_totais += ((uint64_t)fd.nFileSizeHigh << 32)
+                                     | fd.nFileSizeLow;
+                } else {
                     ok = false;
-            }
-        } else {
-            /* Arquivo normal */
-            bool del = limpeza_deletar_arquivo_retorna(entrada_path);
-            if (del) {
-                s->qtd_arquivos++;
-                s->bytes_totais += fd.nFileSizeLow;
-                s->bytes_totais += (uint64_t)fd.nFileSizeHigh << 32;
+                }
+            } else if (limpeza_e_juncao_symlink(fd.dwFileAttributes)) {
+                /* Juncao/symlink: NAO recursa. Remove so o link; falha
+                 * apenas se essa remocao falhar.                            */
+                if (limpeza_remover_diretorio(f, entrada_path))
+                    limpeza_stats_get()->qtd_pastas++;
+                else
+                    ok = false;
             } else {
-                ok = false;
+                bool sub_ok = limpeza_varrer_diretorio(f, entrada_path);
+                bool removido = limpeza_remover_diretorio(f, entrada_path);
+                if (removido)
+                    limpeza_stats_get()->qtd_pastas++;
+                ok = ok && sub_ok && removido;
             }
         }
-proxima:;
-    } while (FindNextFileW(hFind, &fd));
+
+        if (!FindNextFileW(hFind, &fd))
+            break;
+    }
 
     FindClose(hFind);
     return ok;
 }
 
 /* Prototipos dos auxiliares internos da limpeza. */
-extern void  limpeza_log_arquivo(DelphiStr caminho);         /* FUN_13671600 */
+extern void  limpeza_log_arquivo(void *worker, DelphiStr caminho); /* FUN_13671600 */
 extern bool  limpeza_tomar_posse(DelphiStr caminho);         /* FUN_136712f0 */
-extern bool  limpeza_deletar_diretorio(DelphiStr caminho);   /* FUN_13673fb4 */
-extern bool  limpeza_deletar_arquivo_retorna(DelphiStr f);   /* chama FUN_13673ee0 e devolve bool */
-extern void  str_concat(DelphiStr *dst, ...);
+extern bool  limpeza_worker_cancelado(void *worker);         /* FUN_1366039c */
+extern void  incluir_barra_final(DelphiStr dir, DelphiStr *dst); /* FUN_131776e8 */
+extern void  str_from_wbuf(DelphiStr *dst, const wchar_t *buf, int max); /* FUN_1314c674 */
+extern void  str_concat(DelphiStr *dst, ...);                /* FUN_1314c828 */
 extern bool  str_starts_with(DelphiStr s, const wchar_t *prefix);
 extern DelphiStr str_substr(DelphiStr s, int from);
 extern const wchar_t *str_c(DelphiStr s);
@@ -1450,28 +1512,48 @@ extern void timer_notificar_mudanca(void *ctx);
  *    "crosshair1_space"        @ 0x13727fae  -- nome interno do espaco da mira
  *    "CROSSHAIR_SHADOW"        @ 0x13696f1c  -- chave de configuracao: sombra
  *
- *  ESTRUTURA TRPCrosshair (offsets mapeados via decompilacao de FUN_136951fc)
- *    +0x318  quantidade_linhas     -- espessura / numero de linhas da mira
- *    +0x334  indice_forma          -- 0..N, indexa o array de formas:
- *                                    PTR_u_QUADRADO_CENTRAL_1380f738[]
- *    +0x338  sombra_ativa          -- bool: exibir sombra na mira
+ *  ESTRUTURA TRPCrosshair (offsets confirmados em FUN_136951fc e no setter
+ *  FUN_13694ab8, que grava os campos com clamp e chama Repaint)
+ *    +0x310  comprimento_linha   -- comprimento de cada braco
+ *    +0x314  espacamento         -- distancia do centro ao inicio do braco
+ *    +0x318  quadrado_central    -- lado do quadrado central (0 = sem quadrado;
+ *                                   se impar e arredondado para cima, para par)
+ *    +0x31c/+0x320/+0x324  minimos de +0x310/+0x314/+0x318
+ *    +0x328/+0x32c/+0x330  maximos de +0x310/+0x314/+0x318
+ *    +0x334  indice_cor          -- 1..6 (clamp por FUN_13191200), indexa a
+ *                                   tabela de cores em 0x1380f738
+ *    +0x338  sombra_ativa        -- bool: desenhar contorno escuro sob a mira
  *
- *  FORMAS DISPONIVEIS (array em PTR_u_QUADRADO_CENTRAL_1380f738 @ 0x1380f738)
- *    0  "QUADRADO CENTRAL"  -- quadrado no centro da tela
- *    1..N  outras formas (cruzes, pontos, etc. -- indice mapeado via IDA/Ghidra)
+ *  TABELA DE CORES (ARGB, dword[indice] em 0x1380f738 + 4*indice)
+ *    1  0xffff0000  vermelho        4  0xff0000ff  azul
+ *    2  0xff00ff00  verde           5  0xffffff00  amarelo
+ *    3  0xff8000ff  violeta         6  0xffffffff  branco
+ *    O indice 0 nunca e usado (clamp 1..6): a posicao 0x1380f738 e outra
+ *    variavel, um ponteiro para a string "QUADRADO CENTRAL" (0x13694970) --
+ *    por isso o Ghidra nomeia a tabela PTR_u_QUADRADO_CENTRAL_1380f738.
  *
  *  FUNCAO DE DESENHO: FUN_136951fc @ 0x136951fc
- *    Recebe: param_1 = ponteiro para TRPCrosshair
- *            param_2 = contexto de canvas (TCanvas ou similar)
- *    Fluxo:
- *      1. Le tamanho/posicao do canvas via FUN_13694bf0
- *      2. Define cor do background: 0xff04050b (RGBA: alpha=FF, quase preto)
- *      3. Obtem a forma selecionada: FUN_13191200(crosshair->+0x334, 1, 6)
- *         indexa PTR_u_QUADRADO_CENTRAL_1380f738
- *      4. Para cada "linha" da mira (local_2c em 0..1):
- *         - Se linha 0 E sombra_ativa (+0x338): desvia para loop adicional
- *         - Chama FUN_13695114() 4 vezes por linha (desenha os 4 segmentos)
- *      5. Usa FUN_13457c84 com cor 0xff14172e (navy) para o contorno
+ *    1. FUN_13694bf0 obtem as dimensoes; FUN_134576f8 limpa o canvas com
+ *       0xff04050b (quase preto, opaco).
+ *    2. FUN_13457c84 desenha um retangulo navy 0xff14172e de (dim + 84) com
+ *       raio de canto r = 0.72 * <constante>.  O centro da mira e
+ *       (dimX + 84, dimY + 84).
+ *    3. Duas passadas (0 e 1). A passada 0 so roda com sombra_ativa e pinta
+ *       em 0xe6000000 (preto 90%), com cada retangulo 2px maior e deslocado
+ *       -1px: e a SOMBRA. A passada 1 pinta o CORPO na cor escolhida.
+ *    4. Em cada passada: se quadrado_central > 0, 4 retangulos de 1 unidade
+ *       formam o contorno do quadrado central; depois, sempre, 4 bracos
+ *       (esquerda, direita, cima, baixo) de comprimento +0x310 a partir de
+ *       +0x314 do centro.  FUN_13695114 desenha cada retangulo com
+ *       FUN_13457b08, em escala 2x.
+ *    INFERIDO: o fundo opaco e o painel navy indicam que esta funcao pinta a
+ *    PRE-VISUALIZACAO da mira (dialogo); a sobreposicao no jogo e ligada e
+ *    desligada por FUN_13696e3c (abaixo).
+ *
+ *  LIGAR/DESLIGAR A SOBREPOSICAO: FUN_13696e3c @ 0x13696e3c
+ *    Com trava de reentrada em (form+0x478), chama vtable[0x188] do objeto em
+ *    *(PTR_DAT_1381110c)+0x550 com o bool recebido e repassa o mesmo bool a
+ *    FUN_13687120(form+0x46c).
  *
  *  CONFIGURACAO E PERSISTENCIA
  *    A mira e salva/carregada via chaves "CROSSHAIR_SHADOW" e "crosshair1_space"
@@ -1480,62 +1562,93 @@ extern void timer_notificar_mudanca(void *ctx);
  */
 
 typedef struct {
-    /* offsets confirmados via decompilacao de FUN_136951fc */
-    /* ... outros campos VCL ... */
-    int     quantidade_linhas; /* +0x318 -- espessura (numero de repetições por segmento) */
-    /* ... */
-    int     indice_forma;      /* +0x334 -- 0=QUADRADO CENTRAL, 1..N=outras */
-    bool    sombra_ativa;      /* +0x338 -- exibir sombra */
+    /* ... campos herdados da VCL/FMX ate +0x30f ... */
+    int     comprimento_linha;   /* +0x310 */
+    int     espacamento;         /* +0x314 */
+    int     quadrado_central;    /* +0x318 */
+    int     min_comprimento, min_espacamento, min_quadrado;  /* +0x31c..+0x324 */
+    int     max_comprimento, max_espacamento, max_quadrado;  /* +0x328..+0x330 */
+    int     indice_cor;          /* +0x334 -- 1..6 */
+    bool    sombra_ativa;        /* +0x338 */
 } TRPCrosshair;
 
-/* Renderiza a mira customizada no canvas fornecido.
- * Chamada a cada repaint da janela transparente sobreposta ao PB.            */
+extern const uint32_t g_cores_mira[7];  /* 0x1380f738; usar so [1..6] */
+
+/* FUN_13695114: retangulo (x, y, w, h) em unidades, escala 2x, relativo ao
+ * centro. Na passada de sombra usa 0xe6000000 e cresce 1px de cada lado.  */
+static void mira_retangulo(void *canvas, int passada, uint32_t cor,
+                           float cx, float cy,
+                           float x, float y, float w, float h)
+{
+    if (passada == 0)
+        canvas_fill_rect(canvas, 0xe6000000,
+                         cx + x * 2 - 1, cy + y * 2 - 1,
+                         w * 2 + 2, h * 2 + 2);          /* FUN_13457b08 */
+    else
+        canvas_fill_rect(canvas, cor,
+                         cx + x * 2, cy + y * 2, w * 2, h * 2);
+}
+
+/* FUN_136951fc @ 0x136951fc */
 void crosshair_desenhar(TRPCrosshair *mira, void *canvas)
 {
-    /* FUN_136951fc @ 0x136951fc
-     *
-     * Pseudocodigo simplificado do decompilado:                              */
-    float largura, altura;
-    crosshair_obter_dimensoes(mira, &largura, &altura);
+    float dimX, dimY;
+    crosshair_obter_dimensoes(mira, &dimX, &dimY);       /* FUN_13694bf0 */
+    canvas_clear(canvas, 0xff04050b);                    /* FUN_134576f8 */
 
-    /* Define cor de fundo (quase preto transparente) */
-    canvas_set_color(canvas, 0xff04050b);   /* FUN_134576f8 */
-    canvas_clear(canvas);
+    float r = 0.72f * crosshair_raio_base();             /* INFERIDO: FUN_13147ef4 */
+    canvas_round_rect(canvas, 0xff14172e, r, r,
+                      dimX + 84.0f, dimY + 84.0f);       /* FUN_13457c84 */
 
-    /* Obtem nome da forma e o indice normalizado para o array */
-    int idx_forma = crosshair_normalizar_indice(mira->indice_forma, /*min=*/1, /*max=*/6);
-    const wchar_t *nome_forma = g_formas_crosshair[idx_forma];
-                    /* g_formas_crosshair = PTR_u_QUADRADO_CENTRAL_1380f738  */
+    float cx = dimX + 84.0f, cy = dimY + 84.0f;
+    int   len = mira->comprimento_linha;                 /* +0x310 */
+    int   gap = mira->espacamento;                       /* +0x314 */
+    uint32_t cor = g_cores_mira[clamp(mira->indice_cor, 1, 6)]; /* FUN_13191200 */
 
-    /* Desenha o contorno/borda da mira com cor navy */
-    canvas_draw_rect(canvas,
-                     /*cor=*/0xff14172e,
-                     /*x1=*/largura / 2, /*y1=*/altura / 2,
-                     /*x2=*/largura / 2 + 84.0f, /*y2=*/altura / 2 + 84.0f);
+    for (int passada = 0; passada < 2; passada++) {
+        if (passada == 0 && !mira->sombra_ativa)
+            continue;                                    /* sem sombra */
 
-    /* Itera duas vezes: passagem 0 = corpo, passagem 1 = sombra (se ativa) */
-    for (int passo = 0; passo < 2; passo++) {
-        if (passo == 0 && !mira->sombra_ativa)
-            continue;          /* sombra desativada: so faz o corpo */
-
-        /* Desenha cada segmento de acordo com quantidade_linhas */
-        for (int s = 0; s < mira->quantidade_linhas; s++) {
-            crosshair_desenhar_segmento(canvas);  /* FUN_13695114 -- N,S,E,W */
-            crosshair_desenhar_segmento(canvas);
-            crosshair_desenhar_segmento(canvas);
-            crosshair_desenhar_segmento(canvas);
+        int q = mira->quadrado_central;                  /* +0x318 */
+        if (q > 0) {
+            if (q & 1) q++;                              /* lado sempre par */
+            float o = -1.0f - q / 2.0f;
+            mira_retangulo(canvas, passada, cor, cx, cy, o,     o,     1, q);     /* esq  */
+            mira_retangulo(canvas, passada, cor, cx, cy, o,     o,     q, 1);     /* topo */
+            mira_retangulo(canvas, passada, cor, cx, cy, o,     o + q, q, 1);     /* base */
+            mira_retangulo(canvas, passada, cor, cx, cy, o + q, o,     1, q + 1); /* dir  */
         }
+
+        mira_retangulo(canvas, passada, cor, cx, cy, -len - gap, -1,  len, 1);  /* braco esq  */
+        mira_retangulo(canvas, passada, cor, cx, cy,  gap - 1,   -1,  len, 1);  /* braco dir  */
+        mira_retangulo(canvas, passada, cor, cx, cy, -1, -len - gap,  1, len);  /* braco cima */
+        mira_retangulo(canvas, passada, cor, cx, cy, -1,  gap - 1,    1, len);  /* braco baixo */
     }
 }
 
+/* FUN_13694ab8 @ 0x13694ab8 -- setter com clamp + Repaint (vtable+0xe0). */
+void crosshair_configurar_parametros(TRPCrosshair *m, int comprimento,
+                                     int espacamento, bool sombra,
+                                     int indice_cor, int quadrado)
+{
+    m->comprimento_linha = clamp(comprimento, m->min_comprimento, m->max_comprimento);
+    m->espacamento       = clamp(espacamento, m->min_espacamento, m->max_espacamento);
+    m->quadrado_central  = clamp(quadrado,    m->min_quadrado,    m->max_quadrado);
+    m->indice_cor        = clamp(indice_cor, 1, 6);
+    m->sombra_ativa      = sombra;
+    controle_repaint(m);
+}
+
 /* Prototipos dos auxiliares da mira. */
-extern void    crosshair_obter_dimensoes(TRPCrosshair *m, float *w, float *h); /* FUN_13694bf0 */
-extern int     crosshair_normalizar_indice(int idx, int min, int max);          /* FUN_13191200 */
-extern void    canvas_set_color(void *canvas, uint32_t cor_rgba);               /* FUN_134576f8 */
-extern void    canvas_clear(void *canvas);
-extern void    canvas_draw_rect(void *canvas, uint32_t cor, float x1, float y1, float x2, float y2); /* FUN_13457c84 */
-extern void    crosshair_desenhar_segmento(void *canvas);                       /* FUN_13695114 */
-extern const wchar_t *g_formas_crosshair[];  /* PTR_u_QUADRADO_CENTRAL_1380f738 */
+extern void  crosshair_obter_dimensoes(TRPCrosshair *m, float *w, float *h); /* FUN_13694bf0 */
+extern int   clamp(int v, int min, int max);                                  /* FUN_13191200 */
+extern void  canvas_clear(void *canvas, uint32_t cor_argb);                   /* FUN_134576f8 */
+extern float crosshair_raio_base(void);                                       /* FUN_13147ef4 */
+extern void  canvas_round_rect(void *canvas, uint32_t cor, float rx, float ry,
+                               float w, float h);                             /* FUN_13457c84 */
+extern void  canvas_fill_rect(void *canvas, uint32_t cor, float x, float y,
+                              float w, float h);                              /* FUN_13457b08 */
+extern void  controle_repaint(void *controle);                                /* vtable+0xe0 */
 
 
 /* ===========================================================================
