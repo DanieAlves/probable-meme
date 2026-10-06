@@ -54,18 +54,18 @@ typedef struct {
     /* +0x04  */ void      *p_observer;          /* ponteiro para observer/vtable */
 
     /* +0x33  */ bool       prioridade_foi_alterada;
-    /* +0x34  */ bool       boost_foi_ativado;
-    /* +0x36  */ bool       flag_0x36;           /* set quando GPU abaixo do esperado 2x */
-    /* +0x3b  */ bool       boost_ativo;          /* estado final do priority boost */
-    /* +0x3d  */ bool       d3dkmt_nao_ok;
-    /* +0x3e  */ bool       d3dkmt_ok;
+    /* +0x34  */ bool       boost_foi_ativado;    /* SetProcessPriorityBoost ok nesta passada */
+    /* +0x36  */ bool       d3dkmt_elevacao_confirmada; /* releitura apos Set(3) deu classe > 2 */
+    /* +0x3b  */ bool       boost_ativo;          /* estado final: boost dinamico HABILITADO */
+    /* +0x3d  */ bool       d3dkmt_elevado;       /* classe de GPU ja > NORMAL ou elevada agora */
+    /* +0x3e  */ bool       d3dkmt_utilizavel;    /* D3DKMT disponivel / ainda vale tentar */
 
     /* +0x68  */ int        contagem_crashes_hoje;
-    /* +0x6c  */ bool       boost_kernel_ativo;  /* resultado de GetProcessPriorityBoost */
+    /* +0x6c  */ bool       boost_desabilitado;   /* bDisableBoost != 0 (boost DESLIGADO) */
     /* +0x78  */ bool       crashes_suprimidos;
 
-    /* +0x7c  */ int        prioridade_d3dkmt_atual;
-    /* +0x88  */ int        contador_erros_boost;
+    /* +0x7c  */ int        classe_d3dkmt_lida;   /* ultima classe lida por D3DKMTGet... */
+    /* +0x88  */ int        contador_boost_reativado; /* vezes que o boost foi religado */
 
     /* Prioridade de CPU (salva/restaura): */
     /* +0x8cc */ bool       cpu_priority_habilitado; /* flag de feature ativa */
@@ -86,8 +86,10 @@ typedef struct {
     /* +0x8c0 */ FARPROC    pfn_D3DKMTGetProcessSchedulingPriorityClass;
     /* +0x8c4 */ FARPROC    pfn_D3DKMTSetProcessSchedulingPriorityClass;
 
-    /* +0x8fd */ bool       d3dkmt_disponivel;   /* ambos ponteiros D3DKMT != NULL */
-    /* +0x900 */ int        contador_erros_d3dkmt;
+    /* +0x8f8 */ int        classe_d3dkmt_inicial;   /* classe lida antes de elevar */
+    /* +0x8fc */ bool       classe_d3dkmt_capturada; /* +0x8f8 e valido */
+    /* +0x8fd */ bool       d3dkmt_disponivel;   /* 0 sem ponteiros; 1 apos Get ok */
+    /* +0x900 */ int        contador_erros_d3dkmt;   /* zerado quando o Get funciona */
 } TPointBlankMantain;
 
 
@@ -375,53 +377,67 @@ extern void log_erro_maintain(TPointBlankMantain *ctx,
  *  Strings de log internas:
  *    "Maintain.GetProcessPriorityBoost"
  *    "Maintain.SetProcessPriorityBoost.Enable"
+ *
+ *  As escritas finais nos campos do contexto sao feitas sob uma trava: o
+ *  objeto em ctx+0x04 tem vtable[0] = travar e vtable[1] = destravar
+ *  (mesmo padrao do §6). Aqui isso aparece como trava_ctx/destrava_ctx.
  */
+
+/* Trava do contexto: vtable[0]/vtable[1] do objeto em ctx+0x04. */
+extern void trava_ctx(TPointBlankMantain *ctx);
+extern void destrava_ctx(TPointBlankMantain *ctx);
+
 void pb_elevar_priority_boost(TPointBlankMantain *ctx, HANDLE hProcesso)
 {
     /* Precisa da feature ativa (+0x8cc) e dos dois ponteiros de funcao. */
     if (!ctx->cpu_priority_habilitado
-        || ctx->pfn_GetProcessPriorityBoost == NULL
-        || ctx->pfn_SetProcessPriorityBoost == NULL)
+        || ctx->pfn_GetProcessPriorityBoost == NULL     /* +0x8a8 */
+        || ctx->pfn_SetProcessPriorityBoost == NULL)    /* +0x8ac */
         return;
 
     /* GetProcessPriorityBoost(hProcesso, &bDisableBoost)
-     * bDisableBoost == TRUE  significa que o boost esta DESABILITADO.
-     * bDisableBoost == FALSE significa que o boost esta HABILITADO (queremos isso). */
+     * bDisableBoost != 0  -> boost dinamico DESABILITADO.
+     * bDisableBoost == 0  -> boost dinamico HABILITADO (o que o ReetFPS quer). */
     BOOL bDisableBoost = 0;
     BOOL ok = ((BOOL(WINAPI*)(HANDLE, PBOOL))ctx->pfn_GetProcessPriorityBoost)(
                   hProcesso, &bDisableBoost);
     if (!ok) {
         DWORD err = GetLastError();
         log_erro_maintain(ctx, L"Maintain.GetProcessPriorityBoost", err);
-        return;
+        return;                     /* unico retorno antecipado do binario */
     }
 
-    /* Salva o estado do boost (TRUE = desabilitado, FALSE = habilitado). */
-    ctx->boost_kernel_ativo = (bDisableBoost == FALSE); /* +0x6c */
+    bool boost_habilitado = (bDisableBoost == 0);
+    bool religou          = false;
 
-    if (bDisableBoost == FALSE) {
-        /* Boost ja esta habilitado -- nada a fazer. */
-        return;
+    if (bDisableBoost != 0) {
+        /* Boost desligado: religa passando bDisablePriorityBoost = FALSE. */
+        ok = ((BOOL(WINAPI*)(HANDLE, BOOL))ctx->pfn_SetProcessPriorityBoost)(
+                 hProcesso, FALSE);
+        if (!ok) {
+            DWORD err = GetLastError();
+            log_erro_maintain(ctx, L"Maintain.SetProcessPriorityBoost.Enable", err);
+            /* NAO retorna: segue para gravar o estado (bDisableBoost continua != 0). */
+        } else {
+            religou = true;
+
+            /* Confirma relendo o estado. */
+            bDisableBoost = 0;
+            ok = ((BOOL(WINAPI*)(HANDLE, PBOOL))ctx->pfn_GetProcessPriorityBoost)(
+                     hProcesso, &bDisableBoost);
+            boost_habilitado = ok && (bDisableBoost == 0);
+        }
     }
 
-    /* Boost esta desabilitado: habilita passando bDisable = FALSE. */
-    ok = ((BOOL(WINAPI*)(HANDLE, BOOL))ctx->pfn_SetProcessPriorityBoost)(
-             hProcesso, FALSE);
-    if (!ok) {
-        DWORD err = GetLastError();
-        log_erro_maintain(ctx, L"Maintain.SetProcessPriorityBoost.Enable", err);
-        return;
+    /* Grava o estado SEMPRE -- inclusive quando o boost ja estava ligado. */
+    trava_ctx(ctx);
+    ctx->boost_desabilitado = (bDisableBoost != 0);     /* +0x6c */
+    ctx->boost_ativo        = boost_habilitado;         /* +0x3b */
+    if (religou) {
+        ctx->boost_foi_ativado = true;                  /* +0x34 = 1 */
+        ctx->contador_boost_reativado++;                /* +0x88     */
     }
-
-    /* Confirma o resultado lendo de volta. */
-    bDisableBoost = 0;
-    ok = ((BOOL(WINAPI*)(HANDLE, PBOOL))ctx->pfn_GetProcessPriorityBoost)(
-             hProcesso, &bDisableBoost);
-    bool boost_agora_ativo = ok && (bDisableBoost == FALSE);
-
-    ctx->boost_foi_ativado = true;                  /* +0x34 = 1 */
-    ctx->boost_ativo       = boost_agora_ativo;     /* +0x3b     */
-    ctx->contador_erros_boost++;                    /* +0x88     */
+    destrava_ctx(ctx);
 }
 
 
@@ -434,146 +450,169 @@ void pb_elevar_priority_boost(TPointBlankMantain *ctx, HANDLE hProcesso)
  *  D3DKMTSetProcessSchedulingPriorityClass eleva a classe de agendamento do
  *  GPU scheduler para o processo. Requer gdi32.dll no Vista+/WDDM.
  *
- *  O valor "2" no codigo corresponde a D3DKMT_SCHEDULINGPRIORITYCLASS_ABOVE_NORMAL
- *  (definido em d3dkmthk.h):
- *    0 = Idle, 1 = Below Normal, 2 = Normal, 3 = Above Normal, 4 = High, 5 = Realtime
- *  -- o ReetFPS tenta elevar para a classe 2 (acima da normal).
+ *  Enum D3DKMT_SCHEDULINGPRIORITYCLASS (d3dkmthk.h):
+ *    0 = IDLE, 1 = BELOW_NORMAL, 2 = NORMAL, 3 = ABOVE_NORMAL, 4 = HIGH, 5 = REALTIME
+ *
+ *  O ReetFPS so mexe quando a classe atual e <= 2 (NORMAL ou abaixo) e entao
+ *  pede a classe 3 (ABOVE_NORMAL) -- coerente com o sufixo ".AboveNormal" da
+ *  string de log. Classes 3..5 ja definidas por outro programa sao mantidas.
  *
  *  Strings de log internas:
  *    "D3DKMTSetProcessSchedulingPriorityClass.AboveNormal"
+ *    (usada so na falha do Set; a falha do Get NAO gera log)
+ *
+ *  As escritas finais em +0x3d/+0x3e/+0x7c/+0x36 sao feitas sob a trava do
+ *  contexto (ver §5).
  */
-void pb_elevar_prioridade_gpu(TPointBlankMantain *ctx,
-                               HANDLE hProcesso,
-                               void  *param_extra)
+#define D3DKMT_CLASSE_NORMAL        2
+#define D3DKMT_CLASSE_ABOVE_NORMAL  3
+
+void pb_elevar_prioridade_gpu(TPointBlankMantain *ctx, HANDLE hProcesso)
 {
-    /* Precisa de ambos os ponteiros D3DKMT. */
-    if (ctx->pfn_D3DKMTGetProcessSchedulingPriorityClass == NULL
-        || ctx->pfn_D3DKMTSetProcessSchedulingPriorityClass == NULL) {
-        ctx->d3dkmt_ok     = false; /* +0x3e = 0 */
-        ctx->d3dkmt_nao_ok = false;
+    /* Sem os dois ponteiros D3DKMT: marca indisponivel e sai. */
+    if (ctx->pfn_D3DKMTGetProcessSchedulingPriorityClass == NULL     /* +0x8c0 */
+        || ctx->pfn_D3DKMTSetProcessSchedulingPriorityClass == NULL) /* +0x8c4 */
+    {
+        ctx->d3dkmt_disponivel = false;                /* +0x8fd = 0 */
+        trava_ctx(ctx);
+        ctx->d3dkmt_utilizavel = false;                /* +0x3e = 0 */
+        ctx->d3dkmt_elevado    = false;                /* +0x3d = 0 */
+        destrava_ctx(ctx);
         return;
     }
 
-    /* D3DKMT_SCHEDULINGPRIORITYCLASS target = Above Normal (2 no enum). */
-    const int CLASSE_ALVO = 2;  /* D3DKMT_SCHEDULINGPRIORITYCLASS_ABOVE_NORMAL */
-    int classe_atual = 0;
+    /* Le a classe atual (valor padrao 2 se a API nao escrever nada). */
+    int classe = D3DKMT_CLASSE_NORMAL;
+    NTSTATUS st = ((NTSTATUS(WINAPI*)(HANDLE, int*))
+                      ctx->pfn_D3DKMTGetProcessSchedulingPriorityClass)(
+                      hProcesso, &classe);
 
-    /* Consulta a classe atual. */
-    int hr = ((int(__stdcall*)(HANDLE, int*))
-                  ctx->pfn_D3DKMTGetProcessSchedulingPriorityClass)(
-                  hProcesso, &classe_atual);
+    if (st != 0) {
+        /* Falha no Get: so conta o erro, sem log. Depois de 6 falhas
+         * seguidas o D3DKMT deixa de ser considerado utilizavel. */
+        ctx->contador_erros_d3dkmt++;                       /* +0x900 */
+        trava_ctx(ctx);
+        ctx->d3dkmt_utilizavel  = (ctx->contador_erros_d3dkmt < 6); /* +0x3e */
+        ctx->d3dkmt_elevado     = false;                    /* +0x3d */
+        ctx->classe_d3dkmt_lida = classe;                   /* +0x7c */
+        destrava_ctx(ctx);
+        return;
+    }
 
-    if (hr != 0) {
-        /* Chamada falhou -- incrementa contador de erros (log so na 1a vez). */
-        ctx->contador_erros_d3dkmt++;
-        if (ctx->contador_erros_d3dkmt == 1)
-            log_erro_maintain(ctx, L"D3DKMTSetProcessSchedulingPriorityClass.AboveNormal", hr);
-    } else if (classe_atual < CLASSE_ALVO) {
-        /* Precisa elevar. */
-        hr = ((int(__stdcall*)(HANDLE, int))
-                  ctx->pfn_D3DKMTSetProcessSchedulingPriorityClass)(
-                  hProcesso, CLASSE_ALVO);
+    /* Get ok: zera erros e guarda a classe inicial. */
+    ctx->contador_erros_d3dkmt   = 0;                       /* +0x900 = 0 */
+    ctx->d3dkmt_disponivel       = true;                    /* +0x8fd = 1 */
+    ctx->classe_d3dkmt_inicial   = classe;                  /* +0x8f8     */
+    ctx->classe_d3dkmt_capturada = true;                    /* +0x8fc = 1 */
 
-        if (hr != 0) {
-            ctx->contador_erros_d3dkmt++;
+    bool elevado = (classe > D3DKMT_CLASSE_NORMAL);         /* ja acima de NORMAL? */
+
+    if (!elevado) {
+        st = ((NTSTATUS(WINAPI*)(HANDLE, int))
+                 ctx->pfn_D3DKMTSetProcessSchedulingPriorityClass)(
+                 hProcesso, D3DKMT_CLASSE_ABOVE_NORMAL);   /* Set(3) */
+
+        if (st == 0) {
+            /* Confirma relendo; so considera elevado se a classe ficou > 2. */
+            classe = D3DKMT_CLASSE_NORMAL;
+            st = ((NTSTATUS(WINAPI*)(HANDLE, int*))
+                     ctx->pfn_D3DKMTGetProcessSchedulingPriorityClass)(
+                     hProcesso, &classe);
+            elevado = (st == 0) && (classe > D3DKMT_CLASSE_NORMAL);
+
+            if (elevado) {
+                trava_ctx(ctx);
+                ctx->d3dkmt_elevacao_confirmada = true;     /* +0x36 = 1 */
+                destrava_ctx(ctx);
+            }
+        } else {
+            /* Falha no Set: conta e loga so na primeira vez. */
+            ctx->contador_erros_d3dkmt++;                   /* +0x900 */
             if (ctx->contador_erros_d3dkmt == 1)
-                log_erro_maintain(ctx, L"D3DKMTSetProcessSchedulingPriorityClass.AboveNormal", hr);
-
-            /* Marcando que a GPU esta abaixo do esperado 2 vezes: levanta flag. */
-            if (ctx->contador_erros_d3dkmt > 2)
-                ctx->flag_0x36 = true; /* +0x36 */
+                log_erro_maintain(ctx,
+                    L"D3DKMTSetProcessSchedulingPriorityClass.AboveNormal", st);
         }
     }
 
-    /* Atualiza flags de estado. */
-    ctx->d3dkmt_disponivel = (hr == 0);    /* +0x8fd */
-    ctx->d3dkmt_nao_ok     = (hr != 0);    /* +0x3d  */
-    ctx->d3dkmt_ok         = (hr == 0);    /* +0x3e  */
-    ctx->prioridade_d3dkmt_atual = classe_atual; /* +0x7c */
+    trava_ctx(ctx);
+    ctx->d3dkmt_utilizavel  = ctx->d3dkmt_disponivel;      /* +0x3e = +0x8fd (1) */
+    ctx->d3dkmt_elevado     = elevado;                      /* +0x3d */
+    ctx->classe_d3dkmt_lida = classe;                       /* +0x7c */
+    destrava_ctx(ctx);
 }
 
 
 /* ===========================================================================
- *  7. MMCSS -- PERFIL MULTIMEDIA "GAMES"
+ *  7. MMCSS -- THREAD DE TIMER DO REETFPS ("Pro Audio" / "Games" / "Playback")
  * ===========================================================================
  *
- *  Evidencia no binario:
- *    Strings em 0x1357c32c: "AvSetMmThreadCharacteristicsW"
- *    Strings em 0x1357c34c: "AvSetMmThreadPriority"
- *    Strings em 0x1357c364: "AvRevertMmThreadCharacteristics"
- *    String  em 0x1357c584: "Games"  (nome da tarefa MMCSS)
- *    String  em 0x1357c5e0 (funcao): chama timeEndPeriod(1) ao reverter
+ *  Funcoes no binario (nenhuma esta definida como funcao no Ghidra; lidas
+ *  a partir dos bytes):
+ *    FUN_1357c2b4 @ 0x1357c2b4  -- carrega avrt.dll uma unica vez:
+ *        DAT_1380f21c = LoadLibraryW(L"avrt.dll")
+ *        DAT_1380f220 = GetProcAddress(.., "AvSetMmThreadCharacteristicsW")
+ *        DAT_1380f224 = GetProcAddress(.., "AvSetMmThreadPriority")
+ *        DAT_1380f228 = GetProcAddress(.., "AvRevertMmThreadCharacteristics")
+ *    0x1357c4d0                 -- registra a THREAD ATUAL no MMCSS
+ *    0x1357c88c                 -- Execute da thread "ReetTimerPrecision"
+ *                                  (VMT em 0x1357c804, classe TTPWatchdog)
  *
- *  O que o ReetFPS faz (reconstruido pelo padrao MMCSS + strings do binario):
+ *  Nomes de tarefa tentados, em ordem (UTF-16LE):
+ *    "Pro Audio"  @ 0x1357c570
+ *    "Games"      @ 0x1357c584
+ *    "Playback"   @ 0x1357c590
  *
- *  MMCSS (Multimedia Class Scheduler Service) permite que um processo/thread
- *  peca ao Windows uma fatia maior de CPU usando um perfil de alta prioridade.
- *  O perfil "Games" e o mais indicado para jogos. Requer avrt.dll (Vista+).
+ *  IMPORTANTE: AvSetMmThreadCharacteristicsW age sobre a thread que a chama.
+ *  Quem chama e o Execute da thread de manutencao do timer (ver §10), entao o
+ *  MMCSS e aplicado a essa thread do proprio ReetFPS, NAO ao processo do
+ *  Point Blank. O objetivo e a thread que reafirma a resolucao de 0.5 ms
+ *  nao perder a vez para outras threads.
  *
- *  Strings de log internas:
- *    "Maintain.GetProcessPriorityBoost"  (compartilhada com a secao 5)
- *
- *  OBSERVACAO: esta funcao nao foi decompilada diretamente (a funcao que
- *  carrega os ponteiros de avrt.dll nao foi localizada no Ghidra nesta
- *  sessao). A reconstrucao abaixo e baseada no padrao canonico de MMCSS +
- *  nas strings do binario e e fiel ao comportamento descrito em ponto_blank.md.
+ *  Nao ha timeEndPeriod aqui: o timeEndPeriod(1) pertence a FUN_1357c5e0
+ *  (revogacao do timer, §10) e so roda se o fallback timeBeginPeriod foi usado.
  */
-
-/* Handle MMCSS global (guardado para poder reverter ao fechar o jogo). */
-static HANDLE g_mmcss_task_handle = NULL;
-static DWORD  g_mmcss_task_index  = 0;
 
 typedef HANDLE (WINAPI *PFN_AvSetMmThreadCharacteristicsW)(LPCWSTR, LPDWORD);
 typedef BOOL   (WINAPI *PFN_AvSetMmThreadPriority)(HANDLE, int);
 typedef BOOL   (WINAPI *PFN_AvRevertMmThreadCharacteristics)(HANDLE);
 
-/* AVRT_PRIORITY_HIGH = 1 (de avrt.h) */
-#define AVRT_PRIORITY_HIGH 1
+extern HMODULE g_hAvrt;                                      /* DAT_1380f21c */
+extern PFN_AvSetMmThreadCharacteristicsW   g_pfnAvSetChar;   /* DAT_1380f220 */
+extern PFN_AvSetMmThreadPriority           g_pfnAvSetPri;    /* DAT_1380f224 */
+extern PFN_AvRevertMmThreadCharacteristics g_pfnAvRevert;    /* DAT_1380f228 */
+extern void avrt_carregar(void);                             /* FUN_1357c2b4 */
 
-void pb_mmcss_configurar(void)
+#define AVRT_PRIORITY_HIGH 1    /* avrt.h */
+
+/* Tenta registrar a thread atual numa tarefa MMCSS e elevar sua prioridade.
+ * Original: codigo em 0x1357c4d0. Retorna o handle da tarefa ou NULL. */
+HANDLE pb_mmcss_configurar(void)
 {
-    HMODULE hAvrt = LoadLibraryW(L"avrt.dll");
-    if (hAvrt == NULL) return;
+    static const wchar_t *tarefas[] = { L"Pro Audio", L"Games", L"Playback" };
+    HANDLE h = NULL;
+    DWORD  indice;
 
-    PFN_AvSetMmThreadCharacteristicsW pfnSet =
-        (PFN_AvSetMmThreadCharacteristicsW)
-        GetProcAddress(hAvrt, "AvSetMmThreadCharacteristicsW");
-    PFN_AvSetMmThreadPriority pfnPri =
-        (PFN_AvSetMmThreadPriority)
-        GetProcAddress(hAvrt, "AvSetMmThreadPriority");
+    avrt_carregar();                                     /* FUN_1357c2b4 */
 
-    if (pfnSet == NULL || pfnPri == NULL) return;
-
-    /* Registra a thread/processo no perfil "Games" do MMCSS.
-     * g_mmcss_task_index e preenchido pela API (indice interno). */
-    g_mmcss_task_handle = pfnSet(L"Games", &g_mmcss_task_index);
-
-    if (g_mmcss_task_handle != NULL) {
-        /* Eleva a prioridade MMCSS para HIGH dentro do perfil "Games". */
-        pfnPri(g_mmcss_task_handle, AVRT_PRIORITY_HIGH);
+    for (int i = 0; i < 3 && h == NULL; i++) {
+        if (g_pfnAvSetChar == NULL)
+            continue;
+        h = g_pfnAvSetChar(tarefas[i], &indice);
+        if (h != NULL && g_pfnAvSetPri != NULL)
+            g_pfnAvSetPri(h, AVRT_PRIORITY_HIGH);        /* (h, 1) */
     }
+    return h;
 }
 
-/* Reverte o MMCSS quando o jogo fecha. Tambem chama timeEndPeriod(1)
- * para desfazer o ajuste de resolucao de timer (FUN_1357c5e0 @ 0x1357c5e0). */
-void pb_mmcss_reverter(void)
+/* Ciclo de vida, visto no Execute da thread em 0x1357c88c:
+ *   inicio : self+0x28 = pb_mmcss_configurar();
+ *   fim    : if (self+0x28 != NULL && g_pfnAvRevert != NULL)
+ *                g_pfnAvRevert(self+0x28);
+ * A reversao e feita inline no Execute; nao existe funcao separada. */
+void pb_mmcss_reverter(HANDLE h_tarefa)
 {
-    if (g_mmcss_task_handle == NULL) return;
-
-    HMODULE hAvrt = GetModuleHandleW(L"avrt.dll");
-    if (hAvrt != NULL) {
-        PFN_AvRevertMmThreadCharacteristics pfnRev =
-            (PFN_AvRevertMmThreadCharacteristics)
-            GetProcAddress(hAvrt, "AvRevertMmThreadCharacteristics");
-        if (pfnRev != NULL)
-            pfnRev(g_mmcss_task_handle);
-    }
-
-    /* Desfaz a resolucao de timer de 1 ms (SetTimerResolution anterior). */
-    timeEndPeriod(1);
-
-    g_mmcss_task_handle = NULL;
-    g_mmcss_task_index  = 0;
+    if (h_tarefa != NULL && g_pfnAvRevert != NULL)
+        g_pfnAvRevert(h_tarefa);                         /* DAT_1380f228 */
 }
 
 
