@@ -23,39 +23,49 @@
  *    11  limpeza_varrer_diretorio()       limpeza recursiva com \\?\ e juncoes
  *    12  pb_configurar_timer_resolution() SetProcessInformation (classe 4) no PB, Win11
  *    13  crosshair_desenhar()             pre-visualizacao da mira (6 cores, sombra)
- *    14  pb_teclado_precisao_*()          "Teclado Turbo": 3 reg add em Keyboard Response
+ *    14  pb_teclado_precisao_*()          toggle "Teclado Turbo" (OpTeclado_ON, 3 reg add)
+ *                                         + card KEYBOARD do painel (so a ultima tecla
+ *                                         de um par oposto vale; efeito no jogo ausente)
  *    15  pb_ajustes_desempenho_ativar()   lote de 35 cmds + Game Bar (nome da feature
- *                                         INFERIDO)
- *    16  pb_interface_transparencia_*()   toggle de transparencia; card INTERFACEDELAY
- *    17  pb_fps_definir_preset()          form TUNLOCK_FPS: preset 1..6 no JSON
- *    18  pb_loadingmap_ativar()           card MAPLOADING (item LOADINGMAP)
- *    19  pb_minimap_off_ativar()          card MINIMAP (MINIMAP_OFF/ONClick) + TRPPBConfig
+ *                                         INFERIDO; 7 = Windows 7)
+ *    16  pb_interface_transparencia_*()   toggle Transparency_ON + card SET_INTERFACE
+ *                                         ("lobby do Point Blank sem delays")
+ *    17  pb_fps_definir_preset()          form TUNLOCK_FPS: 250/360/500/777/999/Ilimitado
+ *    18  pb_loadingmap_ativar()           card MAPLOADING (LOADINGMAP=ACTIVE)
+ *    19  pb_minimap_off_ativar()          card MINIMAP (MINIMAP=ACTIVE) + TRPPBConfig
  *    20  pb_desbloqueador_fps_*()         botoes FPSUNLOCKED_OFF/ON
- *    21  pb_impulsionar_pb_*()            botoes PRIORITYPB_OFF/ON (ligacao com o nome
- *                                         INFERIDA)
- *    22  pb_fullscreen_ativar()           card TELACHEIA (item FULLSCREEN)
+ *    21  pb_impulsionar_pb_*()            botoes PRIORITYPB_OFF/ON (PRIORITYPB=ACTIVE;
+ *                                         card "prioridade maxima")
+ *    22  pb_fullscreen_ativar()           card TELACHEIA (FULLSCREEN=ACTIVE; dica F6)
  *    23  gpu_otimizacao_*()               10 reg add de GPU/GameDVR/rede + perfil NVIDIA
+ *    24  (so comentario)                  cadeia ReetFPS.exe -> ReetFPS.dll -> window.ime
  *
- *  PADRAO DOS CARDS DA TELA "FPS GAME BOOSTER" (secoes 16, 18-22)
- *    Cada card tem botoes *_OFF/*_ON publicados no form TGameBooster.  Os
- *    handlers INTERFACEDELAY, MAPLOADING, MINIMAP e TELACHEIA *_OFFClick
- *    gravam um par chave/valor CIFRADO no store JSON de configuracoes,
- *    trocam os botoes, chamam vtable[0x188] de um controle do overlay e
- *    mostram um card de notificacao.  PRIORITYPB grava o par e liga uma flag
- *    global (_DAT_138103f8); FPSUNLOCKED so abre um formulario.  Nenhum
- *    desses handlers executa comandos nem escreve no processo do jogo; quem
- *    le as chaves e aplica o efeito real NAO foi rastreado.
+ *  PADRAO DOS CARDS DA TELA "FPS GAME BOOSTER" (secoes 14, 16-22)
+ *    Cada card tem botoes *_OFF/*_ON publicados no form TGameBooster.  O
+ *    handler de ativar grava no store JSON de configuracoes o par
+ *    <CHAVE> = "ACTIVE" (ex.: MINIMAP, LOADINGMAP, FULLSCREEN, KEYBOARD,
+ *    SET_INTERFACE, PRIORITYPB), troca os botoes, chama vtable[0x188] de um
+ *    controle do overlay e mostra um card; o de desativar remove a chave.
+ *    O JSON fica na variavel 0x13819948 (via PTR_DAT_13811610), tem o
+ *    cabecalho "ReetFPS_CFG" = "Configuration file for ReetFPS" e e
+ *    SINCRONIZADO com o servidor (setConfig=...&content=<json> para
+ *    https://reetfps.com/update/server.php, FUN_1354db34; ver secao 24).
+ *    Nenhum desses handlers executa comandos nem escreve no processo do
+ *    jogo: o efeito real fica no modulo window.ime, carregado DENTRO do
+ *    Point Blank e AUSENTE do disco (secao 24).
  *
  *  CONVENCOES
- *    - Enderecos sao do binario (image base 0x13140000).
+ *    - Enderecos sao do binario (image base 0x13140000); os da DLL sao
+ *      citados como "ReetFPS.dll @0x1000xxxx" (image base 0x10000000).
  *    - "INFERIDO:" marca o que nao foi comprovado no Ghidra.
- *    - Strings ofuscadas (FUN_134a8d98) sao citadas pelo endereco do blob;
- *      o texto em claro nao foi recuperado.
+ *    - Strings ofuscadas (FUN_134a8d98) aparecem pelo texto decifrado e
+ *      pelo endereco do blob; a cifra e a validacao estao em
+ *      strings_decifradas.md (1011 chamadas, re-decodificadas do PE).
  *
  *  O QUE NAO ESTA AQUI
- *    - O carregador PE em memoria (0x136e5000-0x136e7400) usa
- *      OpenProcess/WriteProcessMemory/CreateRemoteThread. Esse componente
- *      nao e reconstruido neste arquivo por razoes explicadas em ponto_blank.md.
+ *    - Codigo de injecao.  O carregador PE em memoria (0x136e5000-0x136e7400,
+ *      OpenProcess/WriteProcessMemory/CreateRemoteThread) e a injecao por IME
+ *      da ReetFPS.dll sao DESCRITOS na secao 24, sem reconstrucao em C.
  *
  *  COMO LER
  *    Cada funcao tem um comentario com o endereco original para voce abrir
@@ -153,13 +163,17 @@ extern void FUN_1358027c(DelphiStr titulo, DelphiStr corpo, int duracao_ms,
 
 /* Decodificador de string ofuscada -- FUN_134a8d98 @ 0x134a8d98.
  * NAO exibe nada: devolve em *saida o texto decodificado de um blob cifrado.
- * Registradores: EAX = ctx (*PTR_DAT_13811378), EDX = blob, ECX = tamanho;
- * pilha (ordem dos PUSH): chave_b, chave_a, &saida.  Internamente passa por
- * FUN_134a8c90 e FUN_134a8d34 (duas etapas); o texto em claro so existe em
- * tempo de execucao.  Quase sempre o resultado e convertido em seguida por
- * FUN_1314c690 (conversao de string).                                       */
-extern void decodificar_string(void *ctx, const void *blob, int tamanho,
-                               DelphiStr *saida, int chave_a, int chave_b);
+ * Registradores: EAX = ctx (*PTR_DAT_13811378), EDX = blob (AnsiString; o
+ * comprimento fica no dword em blob-4), ECX = chave inicial (16 bits);
+ * pilha (ordem dos PUSH): multiplicador, incremento, &saida.
+ * Cifra (laco de FUN_134a8c90): para cada byte c do blob,
+ *     saida = c XOR (k >> 8);   k = ((c + k) * multiplicador + incremento) & 0xffff
+ * e FUN_134a8d34 descarta os 2 primeiros caracteres do resultado.
+ * Ex.: blob 0x1369e5a0, chave 0x89, mult 0xc9, inc 0xff -> "MINIMAP".
+ * Validacao e tabela completa: strings_decifradas.md.                       */
+extern void decodificar_string(void *ctx, const void *blob, int chave,
+                               DelphiStr *saida, int incremento,
+                               int multiplicador);
 
 /* Despachante de comandos de shell -- FUN_135d1fb8 @ 0x135d1fb8.
  * Recebe um array de linhas de comando e o INDICE DO ULTIMO elemento (EDX),
@@ -171,19 +185,40 @@ extern void executar_lote(const wchar_t *cmds[], int ultimo_indice);
 extern void vcl_set_visible(void *controle, int visivel);   /* FUN_132abec4 = TControl.SetVisible */
 extern void vcl_set_text(void *controle, DelphiStr texto);  /* FUN_132ac010 = SetText */
 
-/* Store de configuracoes do ReetFPS (JSON, objeto em *PTR_DAT_13811bac). */
+/* Store de configuracoes do ReetFPS: texto JSON na variavel 0x13819948
+ * (PTR_DAT_13811610).  FUN_1369b158 faz o parse, garante o par de
+ * cabecalho "ReetFPS_CFG" = "Configuration file for ReetFPS" (blobs
+ * 0x1369b6ec/0x1369b708), remove o par antigo, apaga SEMPRE as chaves
+ * FPS360/FPS777/FPS500/FPS999/FPS1500/FPSMAX (FUN_1369af04; INFERIDO:
+ * restos de uma versao antiga), trata RESOLUTION1..6 como exclusivas,
+ * adiciona o novo par e reserializa.  FUN_1369b87c /
+ * FUN_1369b8f4 consultam uma chave; FUN_1369ae6c remove.  O mesmo texto e
+ * enviado ao servidor por FUN_1354db34 ("setConfig=" ... "&content=") e
+ * FUN_1354cb2c ("connect=" ... "&content=" ... "&rank=true").  FUN_1354d0b0
+ * le SAVED_USER_CONFIG / USER_CONFIG_ID da resposta e recebe a variavel
+ * como parametro (INFERIDO: e quem a sobrescreve com a copia do servidor). */
 extern void config_gravar(void *store, DelphiStr chave, DelphiStr valor); /* FUN_1369b158 */
 extern void config_remover(void *store, DelphiStr chave);                 /* FUN_1369ae6c */
 
-/* Aviso "jogo nao encontrado/nao aberto" -- FUN_135fcd18. */
-extern void jogo_nao_encontrado(void);
+/* Aviso de plano -- FUN_135fcd18 @ 0x135fcd18 (0x135fcd18..0x135fcda6).
+ * Atualiza o acesso da licenca (FUN_1354ea18, que consulta
+ * https://reetfps.com/acess/user.php?) e, se *PTR_DAT_13810cd8 == 0, abre
+ * o dialogo (FUN_13552fac) com o texto decifrado do blob 0x135fcdc0:
+ * "O plano Basic nao oferece suporte para esse servico especifico. Para
+ *  aproveitar esse recurso, e necessario adquirir o plano Advanced."
+ * Versoes anteriores deste arquivo chamavam esta funcao de "jogo nao
+ * encontrado" -- errado.                                                  */
+extern void aviso_plano_basic(void);
 
 /* Globais compartilhadas (cada uma guarda um ponteiro para a variavel real). */
 extern void **PTR_DAT_13811378;  /* contexto do decodificador de strings          */
 extern void **PTR_DAT_13811bac;  /* store de configuracoes (JSON)                 */
 extern void **PTR_DAT_1381110c;  /* form com os controles de overlay (+0x500..)   */
-extern void **PTR_DAT_13810cd8;  /* != 0: jogo em execucao (1a verificacao)       */
-extern void **PTR_DAT_13811928;  /* != 0: jogo em execucao (2a verificacao)       */
+extern void **PTR_DAT_13810cd8;  /* != 0: plano com acesso (== 0 -> aviso "plano Basic",
+                                    ver aviso_plano_basic); NAO e "jogo em execucao" */
+extern void **PTR_DAT_13811928;  /* segunda flag de acesso, lida so pelos handlers do
+                                    painel, sempre em OR com a anterior (INFERIDO:
+                                    outra forma de licenca liberada)               */
 extern void **PTR_DAT_13811568;  /* objeto de estado usado por secao 15/secao 16            */
 
 
@@ -1903,11 +1938,30 @@ void crosshair_configurar_parametros(TRPCrosshair *m, int comprimento,
  *    0x135e9f80  /v BounceTime      /t REG_SZ /d 0 /f
  *    0x135ea048  /v Flags           /t REG_SZ /d 2 /f
  *
- *  ITENS RELACIONADOS (nao chamados pelos handlers acima)
- *    "TeclasAderencia_ON" @ 0x136b6bec e "OpTeclado_ON" @ 0x136b6cac fazem
- *    parte da tabela generica de chaves de toggle (ver secao 15).
- *    INFERIDO: a ligacao de qualquer um deles com o "Teclado Turbo" e apenas
- *    pelo nome.
+ *  CHAVE DE ESTADO (decifrada)
+ *    Os dois handlers gravam o valor "OpTeclado_ON" (blobs 0x136b55d8 e
+ *    0x136b57d0, chamadas @ 0x136b550c / 0x136b573c) = 1 ou 0 na chave
+ *    HKCU "\Keyboard Layout\ReetFPS" (blob 0x13552a34, chamada @ 0x135529f6).
+ *    "OpTeclado_ON" tambem aparece na tabela generica de toggles (secao 15).
+ *
+ *  O CARD "TECLADO DE PRECISAO" DA TELA FPS GAME BOOSTER  (outro mecanismo)
+ *    O recurso anunciado com esse nome e um card do TGameBooster, nao o
+ *    "Teclado Turbo" acima.  Handler de ativar FUN_1372daf8 @ 0x1372daf8:
+ *      - grava KEYBOARD = "ACTIVE" no store JSON (chamadas @ 0x1372db7b /
+ *        0x1372dba8; blobs 0x1372dd84 / 0x1372dd9c);
+ *      - card (titulo "ReetFPS" @ blob 0x1372dee8):
+ *          "Teclado de Precisao Ativado!"                      blob 0x1372ddcc
+ *          "Pressionar teclas opostas como "W/S" e "A/D" agora evita
+ *           conflitos."                                       blob 0x1372de08
+ *          "Apenas a ultima tecla pressionada e reconhecida, garantindo
+ *           movimentos mais fluidos e precisos para uma jogabilidade
+ *           suave."                                           blob 0x1372de5c
+ *    O desligar remove KEYBOARD (chamada @ 0x1372df31).  O texto descreve
+ *    a regra "a ultima tecla de um par oposto vence" (SOCD).  Nenhum codigo
+ *    do ReetFPS.exe ligado a chave KEYBOARD intercepta o teclado (os
+ *    handlers so gravam/removem a chave): INFERIDO que o comportamento seja
+ *    aplicado dentro do jogo pelo modulo window.ime (secao 24), que nao esta
+ *    no disco -- o efeito real NAO e verificavel estaticamente.
  *
  *  O QUE NAO FAZ PARTE DESTE MODULO
  *    - MouseKeys: "reg add ...\Accessibility\MouseKeys /v Flags /d 0"
@@ -1927,14 +1981,12 @@ void crosshair_configurar_parametros(TRPCrosshair *m, int comprimento,
  * FUN_135d20d8) e o executa numa thread (FUN_135d1fdc).                    */
 
 /* Grava a "chave de estado" do toggle: FUN_135529c4 decodifica o caminho
- * (blob @ DAT_13552a34) e FUN_13552a50 abre HKCU (TRegistry, 0x80000001,
- * acesso 0xf003f), OpenKey(caminho, criar=1) e WriteInteger(nome, valor).
+ * (blob @ DAT_13552a34 -> "\Keyboard Layout\ReetFPS") e FUN_13552a50 abre
+ * HKCU (TRegistry, 0x80000001, acesso 0xf003f), OpenKey(caminho, criar=1)
+ * e WriteInteger(nome, valor).
  * Registradores de FUN_13552a50: EAX = obj, EDX = caminho, ECX = nome;
  * o VALOR vai na pilha (PUSH 1 ao ativar, PUSH 0 ao restaurar -- empilhado
- * antes da chamada ao decodificador, mas consumido so por esta funcao).
- * O caminho e o nome sao ofuscados; nao esta provado que o caminho seja
- * "Keyboard Layout\ReetFPS" (INFERIDO: e a chave de estado usada no resto
- * do programa, ex. @ 0x13467cd4).                                         */
+ * antes da chamada ao decodificador, mas consumido so por esta funcao).   */
 extern void estado_obter_chave(void *obj, DelphiStr *caminho_out);           /* FUN_135529c4 */
 extern void estado_gravar(void *obj, DelphiStr caminho, DelphiStr nome,
                           int valor);                                        /* FUN_13552a50 */
@@ -1973,7 +2025,7 @@ void pb_teclado_precisao_ativar(uint8_t *painel)
 {
     DelphiStr nome = NULL, caminho = NULL, tmp = NULL;
 
-    /* Nome do valor de estado: blob @ 0x136b55d8 (cifrado).              */
+    /* Nome do valor de estado: blob @ 0x136b55d8 -> "OpTeclado_ON".      */
     decodificar_string(*PTR_DAT_13811378, (void *)0x136b55d8, 0xa4,
                        &tmp, 0xe, 0x93);
     str_converter(&nome, tmp);                   /* FUN_1314c690           */
@@ -1995,8 +2047,8 @@ void pb_teclado_precisao_ativar(uint8_t *painel)
 }
 
 /* Handler RESTAURAR @ 0x136b5704.  Mesmo padrao, botoes invertidos, sem
- * toast.  O nome do valor de estado vem de outro blob (0x136b57d0) e o
- * valor gravado e 0 em vez de 1.                                          */
+ * toast.  O nome do valor vem de outro blob (0x136b57d0), que tambem
+ * decifra para "OpTeclado_ON"; o valor gravado e 0 em vez de 1.           */
 void pb_teclado_precisao_restaurar(uint8_t *painel)
 {
     DelphiStr nome = NULL, caminho = NULL, tmp = NULL;
@@ -2028,7 +2080,8 @@ void pb_teclado_precisao_restaurar(uint8_t *painel)
  *  ---------------------------------------------------------------------
  *  A) "Ajustes de desempenho"  -- handler @ 0x136b0798 (prologo 55 8B EC)
  *  ---------------------------------------------------------------------
- *    Mesmo padrao do secao 14: grava estado (blob @ 0x136b089c), oculta +0x518,
+ *    Mesmo padrao da secao 14: grava o estado "AjustesDesempenho_ON" = 1
+ *    (blob @ 0x136b089c, chamada @ 0x136b07d0), oculta +0x518,
  *    exibe +0x51c, roda o lote @ 0x135f22f0 e mostra o toast:
  *      "Ajustes de desempenho aplicados!\r\nSistema otimizado para menor
  *       latencia e resposta imediata em jogos."  @ 0x136b08e0 (UTF-16LE)
@@ -2129,15 +2182,18 @@ void pb_ajustes_desempenho_ativar(uint8_t *painel)
  *
  * FUN_13551e10 decodifica um nome, le um valor de configuracao
  * (FUN_13554754) e o compara com ate 4 strings decodificadas; o handler
- * so testa se o retorno e 7.  O significado de 7 NAO foi recuperado (as
- * strings comparadas sao cifradas) -- nao e "Game Bar ja desativado".
+ * so testa se o retorno e 7.  A mensagem exibida nesse caso decifra para
+ * "Essa otimizacao nao e necessaria no Windows 7!" (blob @ 0x136b20a8,
+ * chamada @ 0x136b1f8f), logo 7 = Windows 7 (FUN_13551e10 classifica a
+ * versao do Windows).
  *
- *   retorno == 7 : decodifica uma mensagem (blob @ 0x136b20a8) e chama
- *                  FUN_13552fac(obj, msg, 0), que abre um dialogo da
- *                  aplicacao (FUN_13476c8c: botoes "CONFIRMAR"/"CANCELAR").
- *                  Nao grava nada, nao mexe nos botoes, nao mostra toast.
- *   caso contrario: grava a chave de estado (blob @ 0x136b20e8), troca os
- *                  botoes +0x470/+0x474 e mostra o toast @ 0x136b2124.
+ *   retorno == 7 : mostra essa mensagem via FUN_13552fac(obj, msg, 0), que
+ *                  abre um dialogo da aplicacao (FUN_13476c8c: botoes
+ *                  "CONFIRMAR"/"CANCELAR").  Nao grava nada, nao mexe nos
+ *                  botoes, nao mostra toast.
+ *   caso contrario: grava "GameBar_ON" = 1 (blob @ 0x136b20e8, chamada
+ *                  @ 0x136b1fd0), troca os botoes +0x470/+0x474 e mostra o
+ *                  toast @ 0x136b2124.
  *
  * Nenhum comando "reg add" de Game Bar e executado aqui; os comandos de
  * GameDVR/GameBar estao em outros lotes.                                 */
@@ -2195,36 +2251,43 @@ static const wchar_t *const k_mmcss_low_latency[] = {
 
 
 /* ===========================================================================
- *  16) INTERFACE SEM DELAY  (toggle de transparencia do Windows)
+ *  16) INTERFACE SEM DELAY  (card INTERFACEDELAY + toggle de transparencia)
  * ===========================================================================
  *
- *  O que o binario comprova: um par de handlers de botao (liga/desliga) que
- *  executam cada um um bloco de 6 comandos "reg add" sobre transparencia,
- *  OLED taskbar, miniaturas do DWM e ColorPrevalence, gravam o estado no
- *  registro do ReetFPS e mostram um card de notificacao.
+ *  Ha DUAS coisas diferentes no binario; os textos decifrados resolvem qual
+ *  e qual.
  *
- *  INFERIDO: a ligacao deste par de handlers com o card "INTERFACE SEM
- *  DELAY" da lista de features vem do texto dos toasts, nao de uma
- *  referencia direta no binario.
- *
- *  CANDIDATO MAIS DIRETO: o card INTERFACEDELAY da tela FPS Game Booster
- *  (TGameBooster).  O item de recomendacao "INTERFACE" (@ 0x136ed1e0, label
- *  "Interface otimizada" @ 0x136ed2c8, icone "window") e despachado por
- *  0x136f78d0 para o metodo publicado INTERFACEDELAY_OFFClick @ 0x1372d4b8
- *  (par INTERFACEDELAY_ONClick @ 0x1372d948), que NAO chama os handlers de
- *  transparencia abaixo.  O que 0x1372d4b8 faz (desmontado):
- *    - se o jogo nao esta em execucao (PTR_DAT_13810cd8/13811928) -> aviso;
+ *  A) O CARD "INTERFACE SEM DELAY" -- INTERFACEDELAY da tela FPS Game Booster
+ *  O item de recomendacao "INTERFACE" (@ 0x136ed1e0, label "Interface
+ *  otimizada" @ 0x136ed2c8, icone "window") e despachado por 0x136f78d0
+ *  para o metodo publicado INTERFACEDELAY_OFFClick @ 0x1372d4b8 (par
+ *  INTERFACEDELAY_ONClick @ 0x1372d948).  O que 0x1372d4b8 faz:
+ *    - se nenhuma flag de plano (PTR_DAT_13810cd8/13811928) esta ligada ->
+ *      aviso "plano Basic" (FUN_135fcd18) e sai;
  *    - exibe o controle +0x5dc;
- *    - grava DOIS pares chave/valor cifrados no store JSON (FUN_1369b158;
- *      blobs 0x1372d7f8/0x1372d810 e 0x1372d7f8/0x1372d828) e remove uma
- *      chave (FUN_1369ae6c, blob 0x1372d844);
+ *    - grava no store JSON INTERFACE = "ACTIVE" (chamadas @ 0x1372d519 /
+ *      0x1372d549; blobs 0x1372d7f8 / 0x1372d810) e SET_INTERFACE = "ACTIVE"
+ *      (@ 0x1372d582 / 0x1372d5b5; blob 0x1372d828) e remove SET_INTERFACE2
+ *      (@ 0x1372d5f4; blob 0x1372d844);
  *    - oculta +0x4d4, exibe +0x4cc;
  *    - vtable[0x188](*(*PTR_DAT_1381110c + 0x4ac), 1)   (INFERIDO: SetChecked
- *      de um controle do overlay, como no secao 19/secao 20);
- *    - se EDX != 0, mostra um card (FUN_1358027c, sem icone).
- *  Nenhum comando de shell e executado ali; os nomes das chaves gravadas
- *  sao cifrados.  INFERIDO: o efeito real e aplicado por quem le essas
- *  chaves (nao rastreado).
+ *      de um controle do overlay, como nas secoes 19/20);
+ *    - se EDX != 0, mostra o card (icone "icon.png" @ blob 0x1372d864):
+ *        "A otimizacao da interface foi ativada com sucesso."  blob 0x1372d87c
+ *        "Agora, a navegacao entre as interfaces do lobby do Point Blank
+ *         esta mais rapida e sem delays!"                       blob 0x1372d8d0
+ *  O desligar (0x1372d948) remove INTERFACE, SET_INTERFACE e SET_INTERFACE2
+ *  (chamadas @ 0x1372d990 / 0x1372d9c8 / 0x1372da06).
+ *  Ou seja: a feature promete acelerar o LOBBY do jogo, nao o Windows.
+ *  Nenhum comando de shell e executado; INFERIDO que o efeito seja aplicado
+ *  dentro do jogo pelo modulo window.ime (secao 24), ausente do disco.
+ *
+ *  B) O TOGGLE DE TRANSPARENCIA DO WINDOWS (tela de otimizacoes do Windows)
+ *  Um par de handlers de botao (liga/desliga) que executam cada um um bloco
+ *  de 6 comandos "reg add" sobre transparencia, OLED taskbar, miniaturas do
+ *  DWM e ColorPrevalence, gravam o estado "Transparency_ON" no registro do
+ *  ReetFPS e mostram um card.  NAO e o card "INTERFACE SEM DELAY" acima;
+ *  e reconstruido abaixo por ja ter sido documentado nesta secao.
  *
  *  OBSERVACAO IMPORTANTE (comportamento do proprio ReetFPS):
  *    os textos dos toasts estao TROCADOS em relacao aos comandos.
@@ -2268,8 +2331,9 @@ static const wchar_t *const k_mmcss_low_latency[] = {
  *     para uma interface mais fluida e moderna."         @ 0x136b3980
  *    "ReetFPS" (titulo)                    @ 0x136b382c / 0x136b3a60
  *    "icon.png"                            @ 0x136b3720 / 0x136b3960
- *    Item de perfil "Transparency_ON"      @ 0x136b6dec  (INFERIDO: chave
- *    de estado; o nome gravado pelos handlers vem ofuscado, ver abaixo)
+ *    Chave de estado "Transparency_ON"     @ 0x136b6dec (tabela) -- e o nome
+ *    que os dois handlers gravam (blobs 0x136b3700 / 0x136b3940, chamadas
+ *    @ 0x136b3631 / 0x136b3871, decifrados)
  *
  *  BLOCOS RELACIONADOS QUE NAO FAZEM PARTE DESTES HANDLERS
  *    (Valores de VisualFXSetting no Windows: 0 = deixar o Windows escolher,
@@ -2326,11 +2390,11 @@ static void interface_bloco_religar(void)
     executar_lote(cmds, 5);
 }
 
-/* Parte comum dos dois handlers (mesmo padrao do secao 14): decodifica o nome do
- * valor de estado e grava-o com WriteInteger.  O nome decodificado nao foi
- * recuperado.  blob = 0x136b3700 (religar) ou 0x136b3940 (desligar),
- * tam = 0x11a, chaves (0x46, 0x15); valor gravado = 1 (religar, PUSH 1
- * @ 0x136b3616) ou 0 (desligar).                                             */
+/* Parte comum dos dois handlers (mesmo padrao da secao 14): decodifica o
+ * nome do valor de estado -- "Transparency_ON" nos dois blobs, 0x136b3700
+ * (religar) e 0x136b3940 (desligar); chave 0x11a, incremento 0x46,
+ * multiplicador 0x15 -- e grava-o com WriteInteger em "\Keyboard
+ * Layout\ReetFPS"; valor = 1 (religar, PUSH 1 @ 0x136b3616) ou 0.          */
 static void interface_gravar_estado(const void *blob, int valor)
 {
     DelphiStr dec = NULL, nome = NULL, caminho = NULL;
@@ -2416,14 +2480,30 @@ void pb_interface_transparencia_religar(uint8_t *painel)
  *  de FUN_136ec13c (ver secao 9/secao 18). O despachante FUN_136f78d0 liga essa chave
  *  a 0x137294d8 = FPSUNLOCKED_OFFClick do TGameBooster (secao 20), que troca os
  *  botoes +0x478/+0x474 do form e chama vtable+0x1cc do objeto em
- *  PTR_DAT_13811880 (INFERIDO: exibe este formulario). Sem o jogo aberto
- *  chama FUN_135fcd18.
+ *  PTR_DAT_13811880 (INFERIDO: exibe este formulario). Sem plano liberado
+ *  chama FUN_135fcd18 (aviso "plano Basic").
  *
  *  LEITURA NO INICIO: FUN_13693750 @ 0x13693750 le "FPS_SELECTION_INDEX"
  *  (@ 0x136937e8) do JSON (FUN_1369b8f4), faz Trim (FUN_1316c638) e
  *  TryStrToInt (FUN_1316d204); se nao houver valor, usa 3.
  *
- *  ONDE O FPS CHEGA AO JOGO: NAO LOCALIZADO. O TRPPBConfig (secao 19) grava a
+ *  TEXTOS DOS PRESETS (decifrados; ordem das chamadas em cada funcao)
+ *    FUN_13693810 (rotulo): "250" "360" "500" "777" "999" "MAX"
+ *      (chamadas @ 0x1369387a .. 0x13693970), padrao "500" @ 0x136939a0.
+ *    FUN_13693a64 (legenda): "FPS Desbloqueado * 250" / "* 360" / "* 500" /
+ *      "* 777" / "* 999" / "* Ilimitado" (@ 0x13693ad1 .. 0x13693bbe),
+ *      padrao "FPS Desbloqueado * 500" @ 0x13693bee  ("*" = U+2022, bullet).
+ *    INFERIDO: indice 1..6 -> 250, 360, 500, 777, 999, ilimitado (ordem das
+ *    chamadas; o padrao 500 coincide com o indice padrao 3).  "FPS ILIMITADO"
+ *    e portanto o preset 6 desta tela.
+ *    Chaves FPS360, FPS777, FPS500, FPS999, FPS1500 e FPSMAX: FUN_1369af04
+ *    (@ 0x1369af42 .. 0x1369b031) as remove INCONDICIONALMENTE e
+ *    config_gravar a chama em TODA gravacao; nenhum codigo que as grave foi
+ *    encontrado.  INFERIDO: restos de uma versao anterior, substituidos por
+ *    FPS_SELECTION_INDEX.
+ *
+ *  ONDE O FPS CHEGA AO JOGO: NAO LOCALIZADO no ReetFPS.exe (INFERIDO: no
+ *  modulo window.ime, ausente do disco -- secao 24). O TRPPBConfig (secao 19) grava a
  *  secao [Graphics] ("Graphics" @ 0x1358595c) de
  *  <pasta do jogo>\EnvSet\env_settings.ini (@ 0x13584570) em FUN_13585130;
  *  ali FPSType vem do campo +0x51c (chave @ 0x13585acc) e FPSVal do campo
@@ -2476,11 +2556,12 @@ int fps_clamp_preset(int index)
 }
 
 /*
- * fps_ao_aplicar_com_jogo_aberto  --  FUN_13693d44 @ 0x13693d44
+ * fps_ao_aplicar_com_acesso  --  FUN_13693d44 @ 0x13693d44
  *
- * NAO verifica o jogo: so age quando ele ja esta aberto.
+ * So age se uma das flags de plano estiver ligada (ver aviso_plano_basic;
+ * versoes anteriores diziam "jogo aberto" -- errado).
  */
-void fps_ao_aplicar_com_jogo_aberto(void)
+void fps_ao_aplicar_com_acesso(void)
 {
     if (*(int *)PTR_DAT_13810cd8 != 0 || *(int *)PTR_DAT_13811928 != 0) {
         DAT_1380f724 = 1;
@@ -2525,8 +2606,8 @@ void fps_preset_salvar(int index)
  *
  * So interface: rotulos do form principal (PTR_DAT_13810970) e legenda
  * de um item de lista. Os textos de cada preset sao blobs ofuscados
- * decodificados por FUN_134a8d98 (FUN_13693810 / FUN_13693a64), entao o
- * texto exato de cada preset nao aparece em claro no binario.
+ * decodificados por FUN_134a8d98 (FUN_13693810 / FUN_13693a64); decifrados
+ * no cabecalho desta secao ("250".."MAX" / "FPS Desbloqueado * ...").
  */
 void fps_atualizar_interface(int index)
 {
@@ -2579,7 +2660,7 @@ void pb_fps_definir_preset(int index)
 {
     int idx = fps_clamp_preset(index);
 
-    fps_ao_aplicar_com_jogo_aberto();
+    fps_ao_aplicar_com_acesso();
 
     if (*(int *)PTR_DAT_1381110c != 0 &&
         *(int *)(*(int *)PTR_DAT_1381110c + 0x4fc) != 0)
@@ -2599,8 +2680,10 @@ void pb_fps_definir_preset(int index)
  * em PTR_DAT_13811610:
  *   1. FUN_133db684: ParseJSONValue da string atual;
  *   2. FUN_133e28dc: le o valor atual da chave;
- *   3. FUN_133dd464: remove o par antigo; para certas chaves (comparadas
- *      com strings ofuscadas) remove tambem pares relacionados;
+ *   3. FUN_133dd464: remove o par antigo; FUN_1369af04 remove sempre as
+ *      chaves FPS360/FPS777/FPS500/FPS999/FPS1500/FPSMAX; se a chave for uma de
+ *      RESOLUTION1..RESOLUTION6 (blobs 0x1369b738..0x1369b7c4) remove as
+ *      seis (blobs 0x1369b7e0..0x1369b86c);
  *   4. FUN_133dd2e0: adiciona o novo par;
  *   5. FUN_133d9aac: serializa e grava de volta em PTR_DAT_13811610.
  *  (Declarada em AUXILIARES COMPARTILHADOS: EAX = store, EDX = chave,
@@ -2638,16 +2721,24 @@ void pb_fps_definir_preset(int index)
  *  criado." @ 0x136f7a98.  Chave desconhecida gera excecao (@ 0x136f7c4c).
  *
  *  HANDLER: MAPLOADING_OFFClick @ 0x13728d20 (desmontado)
- *    - se o jogo nao esta em execucao -> FUN_135fcd18 (aviso) e sai;
+ *    - sem plano liberado (PTR_DAT_13810cd8/13811928) -> FUN_135fcd18
+ *      (aviso "plano Basic") e sai;
  *    - oculta +0x4e0, exibe +0x4dc;
  *    - vtable[0x188](*(*PTR_DAT_1381110c + 0x4b0), 1);
- *    - grava no store JSON a CHAVE decodificada do blob 0x13728f10 (tam
- *      0x2e) com o VALOR do blob 0x13728ef8 (tam 0xb8) -- FUN_1369b158;
- *    - se EDX != 0, card: titulo = blob 0x13728fbc, corpo = blob
- *      0x13728f4c, icone "icon.png" @ 0x13728f2c.
- *    Chave, valor e textos sao cifrados; o texto em claro nao foi recuperado.
+ *    - grava no store JSON LOADINGMAP = "ACTIVE" -- FUN_1369b158; chave do
+ *      blob 0x13728f10 (chamada @ 0x13728dd0), valor do blob 0x13728ef8
+ *      (chamada @ 0x13728da3);
+ *    - se EDX != 0, card (titulo "ReetFPS", blob 0x13728fbc; icone
+ *      "icon.png" @ 0x13728f2c):
+ *        "A otimizacao do Loading dos mapas foi ativada com sucesso.
+ *         Aproveite o carregamento instantaneo!"           blob 0x13728f4c
+ *    MAPLOADING_ONClick @ 0x13728fc8 remove LOADINGMAP (chamada @ 0x13728ff9).
  *
  *  O QUE NAO FOI COMPROVADO
+ *    O card promete "carregamento instantaneo" dos mapas, mas nada no
+ *    ReetFPS.exe ligado a LOADINGMAP mexe no disco, no jogo ou no sistema.
+ *    INFERIDO: o efeito (se houver) e aplicado dentro do jogo pelo modulo
+ *    window.ime (secao 24), ausente do disco -- nao verificavel.
  *    Que comandos o sistema executa quando o objeto em +0x4b0 recebe
  *    vtable+0x188(1). A versao anterior desta secao ligava LOADINGMAP aos
  *    caches do LanmanWorkstation (0x135d50b4 / 0x135d51ec / 0x135d5328) e
@@ -2678,7 +2769,7 @@ void pb_loadingmap_ativar(uint8_t *booster, int mostrar_card)
     DelphiStr tmp = NULL, chave = NULL, valor = NULL;
 
     if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
-        jogo_nao_encontrado();                                /* FUN_135fcd18 */
+        aviso_plano_basic();                                /* FUN_135fcd18 */
         return;
     }
 
@@ -2729,26 +2820,34 @@ void pb_loadingmap_ativar(uint8_t *booster, int mostrar_card)
  *  cair no botao MINIMAP nao e conhecido.
  *
  *  O QUE MINIMAP_OFFClick FAZ (desmontado, sem funcao no Ghidra):
- *    1. Se o jogo nao esta em execucao (PTR_DAT_13810cd8 e PTR_DAT_13811928
- *       zerados) chama FUN_135fcd18 (aviso) e sai.
- *    2. Grava no store JSON (FUN_1369b158) a CHAVE do blob 0x137292f0
- *       (tam 0x2f) com o VALOR do blob 0x137292d8 (tam 0xb8).
+ *    1. Se as flags de plano (PTR_DAT_13810cd8 e PTR_DAT_13811928) estao
+ *       zeradas chama FUN_135fcd18 (aviso "plano Basic") e sai.
+ *    2. Grava no store JSON (FUN_1369b158) MINIMAP = "ACTIVE" (chave do
+ *       blob 0x137292f0, chamada @ 0x13729116; valor do blob 0x137292d8,
+ *       chamada @ 0x137290e9).
  *    3. Oculta MINIMAP_OFF (+0x590) e exibe MINIMAP_ON (+0x58c).
  *    4. vtable[0x188](*(*PTR_DAT_1381110c + 0x510), 1)
  *       (INFERIDO: setter Checked de um controle do overlay).
- *    5. Se EDX != 0, card: titulo = blob 0x13729404; corpo = tres blobs
- *       (0x13729328, 0x13729370, 0x137293c0) unidos por "\r\n"
- *       (AnsiString @ 0x13729360); icone "icon.png" @ 0x13729308.
- *  MINIMAP_ONClick remove a mesma chave (FUN_1369ae6c; blob 0x137294cc tem
- *  os mesmos bytes de 0x137292f0), reexibe MINIMAP_OFF, oculta MINIMAP_ON e
- *  chama vtable[0x188](..+0x510, 0).  Nao mostra card.
+ *    5. Se EDX != 0, card (titulo "ReetFPS", blob 0x13729404; icone
+ *       "icon.png" @ 0x13729308); corpo = tres linhas unidas por "\r\n"
+ *       (AnsiString @ 0x13729360):
+ *         " O Minimapa foi desativado com sucesso!"           blob 0x13729328
+ *         "Prepare-se para um aumento significativo no desempenho do jogo."
+ *                                                             blob 0x13729370
+ *         "Aproveite uma experiencia mais fluida e responsiva!" blob 0x137293c0
+ *  MINIMAP_ONClick remove a chave MINIMAP (FUN_1369ae6c; blob 0x137294cc,
+ *  chamada @ 0x13729441), reexibe MINIMAP_OFF, oculta MINIMAP_ON e chama
+ *  vtable[0x188](..+0x510, 0).  Nao mostra card.
+ *  Restauracao: FUN_1369beb0 (0x1369beb0..0x1369e2fb) percorre as chaves do
+ *  painel no JSON; para MINIMAP (decodificada @ 0x1369cb10) testa
+ *  FUN_1369bb4c(chave) e, se ativa, chama MINIMAP_OFFClick com EDX = 0
+ *  (sem card, CALL @ 0x1369cb4b) -- o estado e reaplicado ao abrir.
  *
  *  O QUE NAO FOI COMPROVADO
- *    - O nome da chave gravada e todos os textos do card sao cifrados
- *      (FUN_134a8d98); o texto em claro nao foi recuperado.
  *    - Nenhum dos dois handlers escreve no jogo nem no env_settings.ini.
- *      INFERIDO: quem le essa chave do JSON (ou o controle em +0x510)
- *      aplica o efeito real -- nao rastreado.
+ *      INFERIDO: o minimapa e escondido dentro do jogo pelo modulo
+ *      window.ime (secao 24), que nao esta no disco -- o efeito real nao e
+ *      verificavel estaticamente.
  *    - O nome de icone "map-off" @ 0x13441d9c existe numa tabela de icones
  *      (nome -> SVG); a ligacao com este card nao foi verificada.
  *
@@ -2897,7 +2996,7 @@ void pb_minimap_off_ativar(uint8_t *booster, int mostrar_card)
     DelphiStr tmp = NULL, chave = NULL, valor = NULL;
 
     if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
-        jogo_nao_encontrado();                                /* FUN_135fcd18 */
+        aviso_plano_basic();                                /* FUN_135fcd18 */
         return;
     }
 
@@ -2968,9 +3067,9 @@ void pb_minimap_off_desfazer(uint8_t *booster)
  *    Clicar em "_ON" DESLIGA.
  *
  *  LIGAR  (FPSUNLOCKED_OFFClick @ 0x137294d8)
- *    1. Pre-condicao: *PTR_DAT_13810cd8 != 0 ou *PTR_DAT_13811928 != 0;
- *       senao chama FUN_135fcd18 (mostra um aviso de texto cifrado,
- *       DAT_135fcdc0) e sai.
+ *    1. Pre-condicao: *PTR_DAT_13810cd8 != 0 ou *PTR_DAT_13811928 != 0
+ *       (flags de plano); senao chama FUN_135fcd18 (aviso "plano Basic",
+ *       blob DAT_135fcdc0) e sai.
  *    2. Oculta FPSUNLOCKED_OFF e exibe FPSUNLOCKED_ON (FUN_132abec4 =
  *       TControl.SetVisible: grava +0x69 e envia CM_VISIBLECHANGED 0xB00B).
  *    3. Chama o metodo virtual +0x1cc do formulario em *PTR_DAT_13811880.
@@ -2986,8 +3085,9 @@ void pb_minimap_off_desfazer(uint8_t *booster)
  *    2. FUN_13728c00:
  *         - FUN_132db2e0(*(*PTR_DAT_1381110c + 0x4fc), 0): zera o mesmo
  *           controle que o secao 17 usa para o preset de FPS;
- *         - remove uma chave cifrada (DAT_13728cac) do store de configuracoes
- *           (FUN_1369ae6c, ver nota no fim da secao);
+ *         - remove FPS_SELECTION_INDEX (blob DAT_13728cac, chamada
+ *           @ 0x13728c42) do store de configuracoes (FUN_1369ae6c), ou
+ *           seja, apaga o preset salvo pela secao 17;
  *         - oculta o controle +0x560 do form em DAT_13819fac.
  *    3. FUN_13728cc4: oculta os controles +0x554, +0x558, +0x560, +0x514 e
  *       +0x55c do form em DAT_13819fac (os tres ultimos sao os que o secao 17
@@ -3005,7 +3105,7 @@ void pb_minimap_off_desfazer(uint8_t *booster)
  */
 
 /* Auxiliares desta secao.  decodificar_string, config_remover,
- * vcl_set_visible e jogo_nao_encontrado: AUXILIARES COMPARTILHADOS.
+ * vcl_set_visible e aviso_plano_basic: AUXILIARES COMPARTILHADOS.
  * trackbar_set_posicao (FUN_132db2e0), lista_item e item_set_texto
  * (FUN_13575414/FUN_135750f8, FUN_13574f7c): declarados no secao 17.            */
 extern void **PTR_DAT_13811880;   /* form aberto pelo botao FPSUNLOCKED_OFF   */
@@ -3019,7 +3119,7 @@ static void fps_desbloqueio_limpar_estado(void)
     trackbar_set_posicao(*(void **)((uint8_t *)*PTR_DAT_1381110c + 0x4fc), 0);
 
     decodificar_string(*PTR_DAT_13811378, (void *)0x13728cac, 0x46,
-                       &tmp, 0x7a, 0x38);
+                       &tmp, 0x7a, 0x38);                     /* "FPS_SELECTION_INDEX" */
     str_converter(&chave, tmp);                               /* FUN_1314c690 */
     config_remover(*PTR_DAT_13811bac, chave);                 /* FUN_1369ae6c */
 
@@ -3040,7 +3140,7 @@ static void fps_desbloqueio_ocultar_rotulos(void)
 void pb_desbloqueador_fps_ativar(uint8_t *booster)
 {
     if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
-        jogo_nao_encontrado();              /* FUN_135fcd18 (aviso cifrado DAT_135fcdc0) */
+        aviso_plano_basic();              /* FUN_135fcd18 ("plano Basic", DAT_135fcdc0) */
         return;
     }
 
@@ -3072,8 +3172,9 @@ void pb_desbloqueador_fps_restaurar(uint8_t *booster)
  * = FUN_1369ae6c (store, chave) carregam o documento JSON guardado em
  * PTR_DAT_13811610 (classe em PTR_LAB_133d2d08), procuram a chave
  * (FUN_133e28dc), removem (FUN_133dd464) e/ou adicionam o par (FUN_133dd2e0)
- * e serializam de volta.  store = *PTR_DAT_13811bac.  INFERIDO: e o arquivo
- * de configuracoes do ReetFPS; a gravacao em disco nao foi rastreada.      */
+ * e serializam de volta.  O texto JSON e sincronizado com o servidor
+ * (FUN_1354db34 / FUN_1354cb2c, ver AUXILIARES COMPARTILHADOS); gravacao
+ * em arquivo local nao foi encontrada.                                     */
 
 
 /* ===========================================================================
@@ -3102,10 +3203,12 @@ void pb_desbloqueador_fps_restaurar(uint8_t *booster)
  *    entradas de RTTI de metodo.
  *
  *  QUAL BOTAO E O "IMPULSIONAR"
- *    INFERIDO: o par PRIORITYPB_ON / PRIORITYPB_OFF (campos +0x56c / +0x570,
- *    painel PANEL_PRIORITYPB +0x564).  "PRIORITYPB" tambem e a chave do item
- *    de prioridade na lista de recomendacoes (@ 0x136ed0c4).  Nenhuma string liga
- *    "IMPULSIONAR POINTBLANK" a este botao.
+ *    O par PRIORITYPB_ON / PRIORITYPB_OFF (campos +0x56c / +0x570, painel
+ *    PANEL_PRIORITYPB +0x564).  "PRIORITYPB" tambem e a chave do item de
+ *    prioridade na lista de recomendacoes (@ 0x136ed0c4).  Nao ha string
+ *    "IMPULSIONAR" no binario, mas o card decifrado deste botao diz
+ *    "O jogo foi configurado com prioridade maxima!" / "Isso pode
+ *    proporcionar um aumento no desempenho e nos FPS." -- e o "impulsionar".
  *      PRIORITYPB_OFFClick @ 0x1372e888   (liga)
  *      PRIORITYPB_ONClick  @ 0x1372ebb0   (desliga)
  *
@@ -3114,14 +3217,22 @@ void pb_desbloqueador_fps_restaurar(uint8_t *booster)
  *    2. _DAT_138103f8 = -1  (flag global ligada).
  *       INFERIDO: e a flag que libera a elevacao de prioridade do processo
  *       do PB (secao 3-secao 6); o leitor da flag nao foi localizado.
- *    3. Grava um par chave/valor cifrado no store de configuracoes
- *       (chave DAT_1372ead8, valor DAT_1372eac0; config_gravar).
- *    4. Se param_2 != 0: monta titulo/corpo cifrados (DAT_1372eb0c,
- *       DAT_1372eb58, DAT_1372eba4) e mostra o card via FUN_1358027c.
+ *    3. Grava PRIORITYPB = "ACTIVE" no store de configuracoes (chave blob
+ *       DAT_1372ead8, chamada @ 0x1372e91b; valor blob DAT_1372eac0,
+ *       chamada @ 0x1372e8eb; config_gravar).
+ *    4. Se param_2 != 0: card com icone "icon.png" (blob DAT_1372eaf4),
+ *       corpo "O jogo foi configurado com prioridade maxima!" (DAT_1372eb0c)
+ *       + "\r\n" + "Isso pode proporcionar um aumento no desempenho e nos
+ *       FPS." (DAT_1372eb58) e titulo "ReetFPS" (DAT_1372eba4).
  *
  *  DESLIGAR  (PRIORITYPB_ONClick @ 0x1372ebb0)
  *    Exibe PRIORITYPB_OFF, oculta PRIORITYPB_ON, _DAT_138103f8 = 0 e remove
- *    a chave cifrada DAT_1372ec5c do store.
+ *    PRIORITYPB (blob DAT_1372ec5c, chamada @ 0x1372ec05) do store.
+ *
+ *  O QUE NAO FOI COMPROVADO
+ *    A elevacao de prioridade das secoes 3-6 e feita pelo proprio ReetFPS.exe
+ *    (TPointBlankMantain); a ligacao dela com _DAT_138103f8 / PRIORITYPB
+ *    nao foi rastreada (INFERIDO).
  *
  *  CORRECAO DE VERSOES ANTERIORES
  *    As funcoes antes documentadas aqui e no secao 20 sao outros botoes do
@@ -3142,14 +3253,14 @@ void pb_desbloqueador_fps_restaurar(uint8_t *booster)
  *    BUTTON_STARTPBClick @ 0x13730064 (nao reconstruido).
  *
  *  FUN_13727a5c (sem nome na tabela de metodos)
- *    Decodifica 15 chaves cifradas (DAT_13727f88..DAT_13728178) e remove cada
- *    uma do store (FUN_1369ae6c), atribui valores fixos a 20 globais
- *    (ex.: PTR_DAT_138116e4 = 3, PTR_DAT_138117c4 = 7, PTR_DAT_1381147c = 1)
- *    e redesenha o painel +0x608 do form em DAT_13819fac.  E um reset de
- *    configuracoes; nao localiza o launcher e nao exibe as strings de
- *    progresso em claro.  INFERIDO: e o "aplicar configuracao recomendada"
- *    do primeiro acesso (FirstAccessPointBlankBoosterApplied); quem chama
- *    nao foi localizado.
+ *    Decodifica 15 chaves (DAT_13727f88..DAT_13728178, chamadas
+ *    @ 0x13727a9b..0x13727d53): crosshair1_sizeline/_space/_square e
+ *    crosshair2..4 _sizeline/_space/_square/_color -- e remove cada uma do
+ *    store (FUN_1369ae6c); atribui valores fixos a 20 globais (ex.:
+ *    PTR_DAT_138116e4 = 3, PTR_DAT_138117c4 = 7, PTR_DAT_1381147c = 1) e
+ *    redesenha o painel +0x608 do form em DAT_13819fac.  E o RESET DAS MIRAS
+ *    personalizadas (secao 13), nao um "aplicar configuracao recomendada";
+ *    nao localiza o launcher.  Quem chama nao foi localizado.
  */
 
 /* Auxiliares desta secao (os compartilhados estao no inicio do arquivo;
@@ -3182,7 +3293,7 @@ void pb_impulsionar_pb_ativar(uint8_t *booster, int mostrar_card)
 
     if (mostrar_card) {
         DelphiStr icone = NULL, s1 = NULL, s2 = NULL, corpo = NULL, titulo = NULL;
-        /* Aqui ate o nome do icone (p10) e cifrado. */
+        /* Aqui ate o nome do icone (p10) vem cifrado: "icon.png". */
         decodificar_string(*PTR_DAT_13811378, (void *)0x1372eaf4, 0x30, &tmp, 0xae, 0xd);
         str_converter(&icone, tmp);
         decodificar_string(*PTR_DAT_13811378, (void *)0x1372eb0c, 0x11, &s1, 0xef, 0xa9);
@@ -3211,10 +3322,12 @@ void pb_impulsionar_pb_restaurar(uint8_t *booster)
     config_remover(*PTR_DAT_13811bac, chave);                 /* FUN_1369ae6c */
 }
 
-/* FUN_13727a5c @ 0x13727a5c  -- reset das configuracoes da tela */
-void pb_game_booster_resetar_config(void)
+/* FUN_13727a5c @ 0x13727a5c  -- reset das miras personalizadas */
+void pb_resetar_miras(void)
 {
-    /* 15x: decodificar_string(DAT_13727f88 .. DAT_13728178) + config_remover */
+    /* 15x: decodificar_string(DAT_13727f88 .. DAT_13728178) + config_remover
+     * = crosshair1_sizeline/_space/_square, crosshair2..4_sizeline/_space/
+     *   _square/_color (ver cabecalho da secao).                            */
 
     *(int *)PTR_DAT_138116e4 = 3;  *(int *)PTR_DAT_138113d4 = 0;
     *(int *)PTR_DAT_13811170 = 0;  *(int *)PTR_DAT_13810ac4 = 3;
@@ -3258,26 +3371,41 @@ void pb_game_booster_resetar_config(void)
  *  HANDLER: TELACHEIA_OFFClick @ 0x1372dfb0  (EAX = Self, EDX = mostrar_card)
  *    1. FUN_13727540(Self, 1, 3) com dois zeros na pilha: seleciona linha 1,
  *       coluna 3 da grade de opcoes do form (Self+0x5f8).
- *    2. FUN_1372e7bc(Self, 0): desliga a opcao concorrente -- apaga a sua
- *       chave de configuracao (FUN_1369ae6c), troca os botoes
- *       Self+0x4f0 (exibe) / Self+0x4ec (oculta) e chama
- *       vtable[0x188](*(mgr+0x514), 0).
- *    3. Se o jogo nao esta aberto (PTR_DAT_13810cd8 e PTR_DAT_13811928
- *       zerados): FUN_135fcd18() e sai.
+ *    2. FUN_1372e7bc(Self, 0): desliga a opcao concorrente BORDER_LESS --
+ *       remove a chave BORDER_LESS (chamada @ 0x1372e7ed) do store
+ *       (FUN_1369ae6c), troca os botoes Self+0x4f0 (exibe) / Self+0x4ec
+ *       (oculta) e chama vtable[0x188](*(mgr+0x514), 0).  O card Borderless
+ *       (FUN_1372e3d0) grava BORDER_LESS = "ACTIVE" e diz "O modo Borderless
+ *       foi ativado com sucesso." / "Agora voce pode alternar rapidamente
+ *       entre o jogo e outros aplicativos, desfrutar de maior estabilidade e
+ *       realizar multitarefas sem interrupcoes."  -- tela cheia e borderless
+ *       sao mutuamente exclusivos.
+ *    3. Sem plano liberado (PTR_DAT_13810cd8 e PTR_DAT_13811928 zerados):
+ *       FUN_135fcd18() (aviso "plano Basic") e sai.
  *    4. Senao: oculta Self+0x4a0, exibe Self+0x49c,
- *       vtable[0x188](*(mgr+0x49c), 1), grava no store JSON a CHAVE do blob
- *       0x1372e240 com o VALOR do blob 0x1372e228 (FUN_1369b158) e, se
- *       mostrar_card, exibe o card: icone = blob 0x1372e25c (cifrado),
- *       corpo = blob 0x1372e274 + "\r\n" (@ 0x1372e298) + blob 0x1372e2a8,
- *       titulo = blob 0x1372e2f8.
- *    mgr = *PTR_DAT_1381110c.  Chave, valor e textos sao cifrados
- *    (FUN_134a8d98); o texto em claro nao foi recuperado.
+ *       vtable[0x188](*(mgr+0x49c), 1), grava no store JSON
+ *       FULLSCREEN = "ACTIVE" (chave blob 0x1372e240, chamada @ 0x1372e080;
+ *       valor blob 0x1372e228, chamada @ 0x1372e053) e, se mostrar_card,
+ *       exibe o card: icone "icon.png" (blob 0x1372e25c), corpo
+ *         "Tela cheia ativada!"                                blob 0x1372e274
+ *         + "\r\n" (@ 0x1372e298) +
+ *         "Use F6 para alternar entre tela cheia e janela no Point Blank."
+ *                                                              blob 0x1372e2a8
+ *       e titulo "ReetFPS" (blob 0x1372e2f8).
+ *    mgr = *PTR_DAT_1381110c.  O desfazer (TELACHEIA_ONClick @ 0x1372e304)
+ *    remove FULLSCREEN (chamada @ 0x1372e335).
+ *
+ *  O QUE A STRING DO F6 PERMITE AFIRMAR
+ *    O proprio card diz ao usuario para usar a tecla F6 DENTRO do Point
+ *    Blank para alternar tela cheia/janela.  INFERIDO: o F6 e um atalho
+ *    tratado dentro do jogo pelo modulo injetado window.ime (secao 24).  O
+ *    ReetFPS.exe nao importa RegisterHotKey e nenhuma ligacao entre F6 e
+ *    ScreenMode foi encontrada nele (SetWindowsHookEx/GetAsyncKeyState
+ *    existem no binario, mas nao foram ligados a este card).
  *
  *  O QUE NAO FOI COMPROVADO
  *    Nenhum trecho do handler toca o TRPPBConfig (secao 19) nem a chave
- *    [Graphics] ScreenMode (+0x4f8) do env_settings.ini.  Se a tela cheia
- *    e aplicada gravando ScreenMode, isso acontece em outro ponto (por
- *    exemplo ao iniciar o jogo) que nao foi localizado.  O significado de
+ *    [Graphics] ScreenMode (+0x4f8) do env_settings.ini.  O significado de
  *    vtable[0x188] nos objetos mgr+0x49c / mgr+0x514 tambem nao foi
  *    identificado (pode ser apenas um setter de controle da UI).
  */
@@ -3297,7 +3425,7 @@ void pb_fullscreen_ativar(uint8_t *booster, int mostrar_card)
     form_desligar_opcao_concorrente(booster, 0);
 
     if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
-        jogo_nao_encontrado();                                /* FUN_135fcd18 */
+        aviso_plano_basic();                                /* FUN_135fcd18 */
         return;
     }
 
@@ -3347,6 +3475,20 @@ void pb_fullscreen_ativar(uint8_t *booster, int mostrar_card)
  *    "Restaurando ajustes da GPU"                           @ 0x136c57f8
  *    "Os ajustes da GPU desta tela foram desligados e os
  *     registros do ReetFPS apagados."                       @ 0x136c56bc
+ *
+ *  CHAVES DE ESTADO DO PAINEL (decifradas; chamadas @ 0x136c0b57..0x136c281c,
+ *  cada chave aparece no par ligar/desligar):
+ *    AMD   : AMDRESPOSTA, CONTROLPOTENCYAMD, FLUXODADOSAMD, NUCLEOAMD
+ *    NVIDIA: DESEMPENHONVIDIA, LATENCYNVIDIA, NVIDIABOOST, TELEMETRYNVIDIA
+ *    Intel : MEMORYINTEL, SINCROINTEL, TURBONUCLEOINTEL (e DESEMPENHOINTEL,
+ *            so na lista de FUN_1377e480)
+ *    FUN_1377e480 (0x1377e480..0x137805ab) decodifica, em sequencia, todas
+ *    as chaves de estado das telas de otimizacao do Windows e da GPU
+ *    (GameDVR_ON ... PrioridadeGames_ON, chamadas @ 0x1377e593..0x1377ffd0);
+ *    INFERIDO: e a varredura que limpa/restaura todos os toggles.
+ *    Mensagens do download NVIDIA (@ 0x136be1c4..0x136be69b): "Falha ao
+ *    baixar o arquivo. HTTP %d %s", "Erro ao extrair ZIP NVIDIA: ",
+ *    "O ZIP contem um caminho invalido: " etc.
  *
  *  CLASSES / RTTI
  *    TGPU_Utils -- so os nomes dos registros de metodos anonimos foram
@@ -3544,6 +3686,109 @@ void gpu_nvidiaboost_aplicar(void)
      *    Falha ao iniciar -> "Falha ao iniciar o import do perfil NVIDIA: ".*/
     /* 4. Falha no import -> "Nao foi possivel aplicar o perfil NVIDIA."     */
 }
+
+
+/* ===========================================================================
+ *  24) CADEIA DE CARREGAMENTO: ReetFPS.exe -> ReetFPS.dll -> window.ime
+ * ===========================================================================
+ *
+ *  SO DESCRICAO.  Esta secao explica, com enderecos, como o codigo das
+ *  features do painel chega ao processo do Point Blank.  Nao ha
+ *  reconstrucao em C nem passo a passo reproduzivel de injecao.
+ *
+ *  POR QUE ESTA SECAO EXISTE
+ *    Os handlers das secoes 14 e 16-22 so gravam <CHAVE> = "ACTIVE" no JSON
+ *    de configuracoes; nenhum deles altera o jogo.  O codigo que altera o
+ *    jogo esta num terceiro modulo, window.ime, que nao existe no disco.
+ *
+ *  1) ReetFPS.exe -- carregador web  (unit uWebLoader)
+ *    - FUN_13714d2c (0x13714d2c..0x1371523f, vizinha das rotinas de login;
+ *      INFERIDO: etapa pos-login) chama (@ 0x137150e8) FUN_136e7958 =
+ *      cLoadLibrary.Initialize ($ActRec @ 0x136e783b), que dispara uma
+ *      tarefa assincrona (TTask, FUN_13498880).
+ *    - O corpo dessa tarefa (codigo @ 0x136e75a9..0x136e7643, sem funcao
+ *      definida no Ghidra) obtem um PID por FUN_136e73d4 (CALL @ 0x136e75ae),
+ *      abre esse processo com PROCESS_ALL_ACCESS (PUSH 0x1fffff
+ *      @ 0x136e75d2), cria um TWebLibraryLoader (nome RTTI @ 0x136e6392;
+ *      construtor 0x136e6560), decodifica a URL
+ *      "https://reetfps.com/update/lib_update.php?index=2" (chamada
+ *      @ 0x136e7625, blob 0x136e76e8) e chama 0x136e6cc0 com URL e
+ *      processo: baixa a biblioteca e a carrega da MEMORIA no processo
+ *      aberto, sem gravar arquivo.  Mensagens decifradas do carregador
+ *      (0x136e6922..0x136e703c): "HttpSendRequest failed: ", "[WEB]
+ *      Downloading...", "[WEB] e_magic OK (MZ)", "[WEB] Success!",
+ *      "LoadFromMemory failed".
+ *    - INFERIDO: qual processo FUN_136e73d4 escolhe nao foi resolvido, e
+ *      que a ReetFPS.dll do disco seja exatamente o arquivo servido por
+ *      index=2 e deduzido pelo comportamento.
+ *
+ *  2) ReetFPS.dll  (MSVC x86, image base 0x10000000, sem exports)
+ *    - entry @ ReetFPS.dll 0x10006c3d -> DllMain FUN_100053a0: em
+ *      DLL_PROCESS_ATTACH monta strings numericas de 128 digitos (enchimento)
+ *      e chama FUN_10004dd0, que inicia a thread FUN_100041d0
+ *      (_beginthread).
+ *    - Strings: cada uma e montada na pilha e decifrada por XOR de um byte,
+ *      onde o 1o byte do buffer e a chave (ex.: 06 56 69 6f ... ->
+ *      "PointBlank.exe").  Decifradas da thread: "PointBlank.exe",
+ *      "Waiting process", "RESTART PROCESS AGAIN!", "stub_path->%s",
+ *      "File not found->%s", "[ INIT ] GetFile->FAIL!",
+ *      "[ INIT ] AUTH_CHECK->OK!", "[ INIT ] AUTH_CHECK->FAIL!",
+ *      "[ INIT ] GetProcessInformation->OK!",
+ *      "[ INIT ] GetProcessInformation->ProcessInfo.hWND->0x%X",
+ *      "GetProcessInformation->Failed to get process informations",
+ *      "[ INIT ] Init->Sucess!",
+ *      "Failed to load library, ID: 0x%d \n Message: %s"; e, em claro
+ *      byte a byte, "window.ime".
+ *    - Thread FUN_100041d0 @ ReetFPS.dll 0x100041d0:
+ *        a) autenticacao FUN_10003c00: le o valor "WindowMsg" de
+ *           HKCU\Control Panel\Desktop\Colors\ (caminho decifrado com
+ *           chave 0x43) e compara com PID x 1482301 (constante "1482301"
+ *           convertida por FUN_10001010); o resultado vai para
+ *           DAT_10026674.  O valor nao existe no registro fora de execucao
+ *           (INFERIDO: e escrito pelo ReetFPS.exe pouco antes, como senha
+ *           temporaria);
+ *        b) caminho do stub FUN_10001be0: SHGetSpecialFolderPathA(CSIDL
+ *           0x25 = System) + "\window" + ".ime";
+ *        c) laco a cada 1 s (Sleep(1000)): FUN_10002a60 procura o
+ *           processo "PointBlank.exe" (Toolhelp) e EnumWindows(FUN_10002a00)
+ *           acha a janela dele;
+ *        d) injecao FUN_100024c0 (abaixo); se falhar, loga e espera 1 s;
+ *           se der certo, FUN_10001270 confere com Module32First/Next que
+ *           "window.ime" esta carregado no jogo.
+ *    - Injecao por IME, em alto nivel (FUN_100024c0 @ 0x100024c0):
+ *      repete a checagem PID x 1482301; instala o arquivo do item b) como
+ *      layout de teclado de nome "window" (FUN_10002360 resolve
+ *      ImmInstallIMEW em imm32.dll); guarda o idioma padrao
+ *      (SystemParametersInfoA 0x59); poe a janela do jogo em primeiro plano
+ *      e envia a ela pedidos de troca de idioma (mensagens 0x50/0x51, via
+ *      FUN_10002270 -> funcao de user32 resolvida em tempo de execucao,
+ *      timeout 200 ms), o que faz o Windows carregar o IME DENTRO do
+ *      Point Blank; depois restaura o idioma padrao (SPI 0x5a) e
+ *      FUN_10002100 descarrega o layout (UnloadKeyboardLayout) e apaga o
+ *      valor correspondente em HKCU\Keyboard Layout\Preload
+ *      (RegEnumValueA/RegDeleteValueA).  E por isso que a DLL importa
+ *      UnloadKeyboardLayout e RegDeleteValueA: limpeza, nao leitura de
+ *      configuracao.
+ *    - Anti-analise (so registro): FUN_10002360 regrava o prologo de
+ *      ImmInstallIMEW antes de chama-la, e a DLL e carregada da memoria
+ *      sem arquivo (item 1).
+ *
+ *  3) window.ime  -- O MODULO DAS FEATURES (AUSENTE)
+ *    Nao existe em System32, SysWOW64, Temp nem AppData (verificado) e nao
+ *    apareceu entre as imagens PE embutidas no ReetFPS.exe na pesquisa.
+ *    INFERIDO: e baixado do servidor apos o login, como a DLL.  As chaves do painel (MINIMAP, LOADINGMAP, FULLSCREEN,
+ *    KEYBOARD, SET_INTERFACE, PRIORITYPB, FPS_SELECTION_INDEX, COUNTERPING,
+ *    FPSCOUNTER, HUDPLAYERS, REETSTATS, crosshair*, ...) e o JSON
+ *    sincronizado com o servidor sao o unico contrato visivel entre o
+ *    painel e esse modulo; COMO ele as le (servidor, registro ou memoria)
+ *    nao foi verificado.
+ *
+ *  LIMITACAO
+ *    O efeito real de cada feature do painel dentro do jogo (minimapa,
+ *    tela cheia/F6, teclado SOCD, interface do lobby, FPS, carregamento de
+ *    mapa) esta no window.ime e NAO e verificavel por analise estatica do
+ *    que existe em disco.
+ */
 
 
 /* ============================================================================

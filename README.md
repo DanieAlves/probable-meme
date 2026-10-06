@@ -29,11 +29,22 @@ Metadados do binário:
 | Arquivo | Conteúdo |
 |---|---|
 | `reetfps.c` | Lógica reconstruída e comentada: fluxo de **login**, **resolvedor do PowerShell** e o **modelo do otimizador**. É o arquivo para ler primeiro. |
-| `ponto_blank.c` | 23 seções. Rotinas ligadas ao Point Blank (instalação, encerramento, prioridade de CPU/GPU, crashes, timer resolution) e as funcionalidades da tela do programa (teclado, interface, FPS, mapas, mini-map, tela cheia, GPU, mira). O cabeçalho do arquivo tem o índice e as convenções (`INFERIDO:` marca o que não foi comprovado). |
+| `ponto_blank.c` | 24 seções. Rotinas ligadas ao Point Blank (instalação, encerramento, prioridade de CPU/GPU, crashes, timer resolution), as funcionalidades da tela do programa (teclado, interface, FPS, mapas, mini-map, tela cheia, GPU, mira) e, na seção 24, a cadeia de carregamento `ReetFPS.exe → ReetFPS.dll → window.ime` (só descrição, sem código de injeção). O cabeçalho tem o índice e as convenções (`INFERIDO:` marca o que não foi comprovado). |
+| `strings_decifradas.md` | Texto em claro das **988** strings cifradas do `ReetFPS.exe` (de 1011 chamadas ao decodificador), com a cifra explicada, o método de validação e a seção de uso de cada uma; mais as strings decifradas da `ReetFPS.dll`. |
 | `catalogo_comandos.md` | Os **559 comandos** do otimizador, agrupados por efeito, em formato legível. |
 | `catalogo_comandos.c` | Os mesmos 559 comandos como arrays de dados em C (`Tweak[]` por categoria). |
 | `reetfps.h` | Tipo `Tweak` compartilhado. |
 | `ponto_blank.md` | Resumo de alto nível do que o ReetFPS faz com o Point Blank (sem código). |
+
+### Os outros arquivos da instalação (`C:\ReetFPS - Optimizer`)
+
+| Arquivo | O que é |
+|---|---|
+| `ReetFPS.dll` | DLL C++ (MSVC) **sem exports**, com strings cifradas. Não contém as features: espera o `PointBlank.exe` e injeta nele um terceiro módulo, `window.ime`, pelo mecanismo de IME do Windows (seção 24 do `ponto_blank.c`). O `ReetFPS.exe` baixa uma biblioteca de `reetfps.com/update/lib_update.php?index=2` e a carrega da memória em outro processo; que seja esta DLL é inferido. |
+| `window.ime` | O módulo que aplica as features do painel **dentro do jogo**. **Não existe no disco** (nem em System32/SysWOW64/Temp/AppData); provavelmente vem do servidor após o login. Por isso o efeito real de MINI-MAP OFF, tela cheia/F6, teclado de precisão, interface do lobby etc. não pôde ser verificado. |
+| `ReetFix.exe` | Reparador/atualizador Delphi (`TFReetFix`). Uma cópia está **embutida no próprio `ReetFPS.exe`** no offset de arquivo `0x134297c` (cabeçalho `MZ`/`PE` conferido; os primeiros 64 KiB são idênticos ao `ReetFix.exe` em disco). |
+| `libeay32.dll` / `ssleay32.dll` | OpenSSL usado pelo Indy (HTTPS). |
+| `uninstall.exe` | Desinstalador. |
 
 ## Mapa das funções-chave (para abrir no Ghidra)
 
@@ -46,12 +57,14 @@ definida no Ghidra; foram lidos pela desmontagem (prólogo `55 8B EC`).
 | Endereço | Papel | Nome no C | § |
 |---|---|---|---|
 | `0x1358027c` | Card de notificação (16 parâmetros: título, corpo, duração + 13 na pilha) | `FUN_1358027c()` | todas |
-| `0x134a8d98` | Decodificador de strings **ofuscadas** (não exibe nada) | `decodificar_string()` | todas |
+| `0x134a8d98` | Decodificador de strings **ofuscadas** (não exibe nada); cifra em `0x134a8c90`, ver `strings_decifradas.md` | `decodificar_string()` | todas |
 | `0x135d1fb8` | Despachante de comandos: monta um `.bat` com o array e executa em thread | `executar_lote()` | 14–16, 23 |
-| `0x1369b158` | Grava par chave/valor no store JSON de configurações | `config_gravar()` | 17–22 |
-| `0x1369ae6c` | Remove chave do store JSON | `config_remover()` | 19–22 |
+| `0x1369b158` | Grava par chave/valor no store JSON de configurações (ex.: `MINIMAP` = `ACTIVE`) | `config_gravar()` | 14, 16–22 |
+| `0x1369ae6c` | Remove chave do store JSON | `config_remover()` | 14, 16–22 |
+| `0x1369beb0` | Restaura o estado do painel: para cada chave ativa no JSON, chama de novo o handler (sem card) | — | 19 |
+| `0x1354db34` / `0x1354cb2c` | Envia o JSON de configurações ao servidor (`setConfig=` / `connect=` … `&content=`) | — | cabeçalho |
 | `0x132abec4` | `TControl.SetVisible` | `vcl_set_visible()` | todas |
-| `0x135fcd18` | Aviso "jogo não encontrado" (texto cifrado) | `jogo_nao_encontrado()` | 18–22 |
+| `0x135fcd18` | Aviso **"plano Basic não oferece suporte… adquirir o plano Advanced"** (não é "jogo não encontrado") | `aviso_plano_basic()` | 17–22 |
 
 **Login e otimizador (`reetfps.c`)**
 
@@ -88,12 +101,13 @@ definida no Ghidra; foram lidos pela desmontagem (prólogo `55 8B EC`).
 | `0x136951fc` | Desenha a pré-visualização da mira (6 cores, sombra) | `crosshair_desenhar()` | 13 |
 | `0x13694ab8` | Setter dos parâmetros da mira (clamp + repaint) | `crosshair_configurar_parametros()` | 13 |
 | `0x13696e3c` | Liga/desliga a sobreposição da mira (`vtable[0x188]` em `mgr+0x550`) | — | 13 |
-| `0x136b54d4` / `0x136b5704` | Teclado Turbo: ativar / restaurar | `pb_teclado_precisao_ativar()` / `_restaurar()` | 14 |
+| `0x136b54d4` / `0x136b5704` | Teclado Turbo (`OpTeclado_ON`): ativar / restaurar | `pb_teclado_precisao_ativar()` / `_restaurar()` | 14 |
+| `0x1372daf8` | Card "Teclado de Precisão" (`KEYBOARD` = `ACTIVE`; só a última tecla de um par oposto vale) | — | 14 |
 | `0x135e9af4` / `0x135e9d98` | Blocos de 3 e 4 `reg add` de Keyboard Response | `teclado_bloco_ativar()` / `_restaurar()` | 14 |
 | `0x136b0798` | "Ajustes de desempenho" (lote de 35 comandos em `0x135f22f0`) | `pb_ajustes_desempenho_ativar()` | 15 |
 | `0x136b1f48` | Card do Game Bar | `pb_gamebar_desativar()` | 15 |
 | `0x136b383c` / `0x136b35fc` | Transparência: desliga / religa (toasts trocados no próprio binário) | `pb_interface_transparencia_desligar()` / `_religar()` | 16 |
-| `0x1372d4b8` | `INTERFACEDELAY_OFFClick` (card INTERFACEDELAY) | — | 16 |
+| `0x1372d4b8` | `INTERFACEDELAY_OFFClick`: card "INTERFACE SEM DELAY" (`INTERFACE`/`SET_INTERFACE` = `ACTIVE`; promete lobby do PB sem delays) | — | 16 |
 | `0x1369407c` | Aplica o preset de FPS (1..6) e grava `FPS_SELECTION_INDEX` no JSON | `pb_fps_definir_preset()` | 17 |
 | `0x13693740` | Clamp do preset: fora de [1,6] → 3 | `fps_clamp_preset()` | 17 |
 | `0x13693fec` | Grava o índice no JSON (`IntToStr` + `FUN_1369b158`) | `fps_preset_salvar()` | 17 |
@@ -104,13 +118,28 @@ definida no Ghidra; foram lidos pela desmontagem (prólogo `55 8B EC`).
 | `0x13600598` | **Reparo do sistema** (não tem relação com `TRPPBConfig`) | — | 19 |
 | `0x137294d8` / `0x13729524` | `FPSUNLOCKED_OFFClick` / `FPSUNLOCKED_ONClick` | `pb_desbloqueador_fps_ativar()` / `_restaurar()` | 20 |
 | `0x1372e888` / `0x1372ebb0` | `PRIORITYPB_OFFClick` / `PRIORITYPB_ONClick` | `pb_impulsionar_pb_ativar()` / `_restaurar()` | 21 |
-| `0x13727a5c` | Reset de 15 chaves e 20 globais da tela FPS Game Booster | `pb_game_booster_resetar_config()` | 21 |
-| `0x1372dfb0` / `0x1372e304` | `TELACHEIA_OFFClick` / `TELACHEIA_ONClick` (item FULLSCREEN) | `pb_fullscreen_ativar()` / — | 22 |
+| `0x13727a5c` | Reset das miras personalizadas (remove as 15 chaves `crosshair*`) e de 20 globais | `pb_resetar_miras()` | 21 |
+| `0x1372dfb0` / `0x1372e304` | `TELACHEIA_OFFClick` / `TELACHEIA_ONClick` (`FULLSCREEN` = `ACTIVE`; card manda usar **F6** no jogo) | `pb_fullscreen_ativar()` / — | 22 |
+| `0x1372e3d0` | Card Borderless (`BORDER_LESS`), exclusivo com a tela cheia | — | 22 |
 | `0x135f7f88` / `0x135f8a60` | Lotes de 10 comandos da GPU: ativar / restaurar | `gpu_otimizacao_ativar()` / `_restaurar()` | 23 |
 | `0x136c1ad6` | ActRec de `TGPU_Utils.NVIDIABOOST_OFFClick` (importa `ReetFPS.nip`) | `gpu_nvidiaboost_aplicar()` | 23 |
 | `0x13734cd1` | `TGPURegistryWorker` (contadores PDH de uso/memória da GPU) | — | 23 |
+| `0x136e7958` | `cLoadLibrary.Initialize`: tarefa que baixa `lib_update.php?index=2` e carrega a biblioteca da memória em outro processo | — | 24 |
 | `0x1361508c` | Desenho do botão "LOGIN"/"ENTRANDO..." | — (apenas UI) | — |
 | `0x1359474c` | Desenho do card "APLICAR PERFIL"/"PERFIL ATIVO" | — (apenas UI) | — |
+
+**`ReetFPS.dll` (programa separado no Ghidra, image base `0x10000000`)** — ver seção 24
+
+| Endereço | Papel |
+|---|---|
+| `0x10006c3d` → `0x100053a0` | `entry` → `DllMain`; em `DLL_PROCESS_ATTACH` chama `0x10004dd0` |
+| `0x10004dd0` | Inicia a thread principal (`_beginthread(0x100041d0)`) |
+| `0x100041d0` | Thread: espera `PointBlank.exe` (a cada 1 s), injeta `window.ime`, confere o módulo |
+| `0x10003c00` | Autenticação temporária: `HKCU\Control Panel\Desktop\Colors\WindowMsg` == PID × 1482301 |
+| `0x10001be0` | Caminho do stub: diretório System + `\window.ime` |
+| `0x100024c0` | Injeção por IME (instala layout "window" e pede troca de idioma à janela do jogo) |
+| `0x10002100` | Limpeza: `UnloadKeyboardLayout` + apaga o valor em `HKCU\Keyboard Layout\Preload` |
+| `0x10001270` | Confere com `Module32First/Next` se `window.ime` está carregado no jogo |
 
 Estado global do login:
 
@@ -160,6 +189,11 @@ presentes no binário: `System.Net.URLClient`, `TCredentialsStorage`,
 - Cobre as **partes úteis** (login, execução de ajustes, catálogo completo de
   comandos), não as 18 mil funções — a maior parte é runtime do Delphi (VCL/RTL)
   e código de desenho da interface, que não agregam ao entendimento.
+- **As features do painel não são verificáveis por inteiro.** Os botões do
+  painel só gravam chaves (`MINIMAP=ACTIVE` etc.) num JSON sincronizado com o
+  servidor; o código que age dentro do jogo está no `window.ime`, que não
+  está em disco. A seção 24 do `ponto_blank.c` descreve até onde a análise
+  estática chega.
 - Para ir além em binários Delphi, a ferramenta **IDR (Interactive Delphi
   Reconstructor)** recupera nomes de formulários, métodos e propriedades melhor
   que o Ghidra.
