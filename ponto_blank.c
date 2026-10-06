@@ -2752,269 +2752,301 @@ void pbconfig_salvar(uint8_t *cfg)
 
 
 /* ===========================================================================
- *  20) DESBLOQUEADOR DE FPS  ("DESBLOQUEIO DE FPS")
+ *  20) DESBLOQUEADOR DE FPS  (botoes FPSUNLOCKED_ON / FPSUNLOCKED_OFF)
  * ===========================================================================
  *
- *  Remove o limitador de FPS embutido no motor do Point Blank chamando
- *  diretamente o metodo de controle do objeto de cap de FPS via vtable.
- *  Diferente do §17 (FPS ILIMITADO / TRPFpsLimit), que usa um sistema de
- *  PRESETS numerados (1..6) + modo "UNLOCKEDFPS", o DESBLOQUEADOR DE FPS e
- *  um toggle binario simples: ativa (1) ou desativa (0) o cap no objeto
- *  em PTR_DAT_1381110c + 0x508.
+ *  ONDE ESTA
+ *    Formulario TGameBooster (unidade UGameBooster).  A tabela de metodos
+ *    publicados (~0x13724890 em diante) liga cada botao ao seu handler:
+ *      FPSUNLOCKED_OFFClick  @ 0x137294d8   (botao FPSUNLOCKED_OFF, campo +0x478)
+ *      FPSUNLOCKED_ONClick   @ 0x13729524   (botao FPSUNLOCKED_ON,  campo +0x474)
+ *    Campos (tabela de campos publicados, ~0x13723ca0):
+ *      Panel_FPSUNLOCKED +0x46c, Label1 +0x470, FPSUNLOCKED_ON +0x474,
+ *      FPSUNLOCKED_OFF +0x478.
+ *    O Ghidra nao criou funcoes nesses dois enderecos; o fluxo abaixo vem da
+ *    desmontagem direta (disassemble_bytes 0x137294d8..0x13729574).
  *
- *  COMPARACAO COM §17 (FPS ILIMITADO)
- *  -----------------------------------
- *    FPS ILIMITADO  (§17): objeto em PTR_DAT_1381110c + 0x4fc
- *                          usa FUN_132db2e0(obj, preset_index)
- *                          escreve "FPS 486" no campo fps_obj+0xc
- *                          persiste "UNLOCKEDFPS" no registro
- *    DESBLOQUEADOR (§20) : objeto em PTR_DAT_1381110c + 0x508
- *                          chama vtable[0x188](obj, 1/0) -- toggle puro
- *                          sem preset, sem escrita de string, sem registro
+ *    Convencao dos botoes: o botao "_OFF" fica visivel quando o recurso esta
+ *    desligado; clicar nele LIGA o recurso e troca para o botao "_ON".
+ *    Clicar em "_ON" DESLIGA.
  *
- *  LABEL DA FEATURE: "DESBLOQUEIO DE FPS"  @ 0x13729580  (UTF-16LE)
+ *  LIGAR  (FPSUNLOCKED_OFFClick @ 0x137294d8)
+ *    1. Pre-condicao: *PTR_DAT_13810cd8 != 0 ou *PTR_DAT_13811928 != 0;
+ *       senao chama FUN_135fcd18 (mostra um aviso de texto cifrado,
+ *       DAT_135fcdc0) e sai.
+ *    2. Oculta FPSUNLOCKED_OFF e exibe FPSUNLOCKED_ON (FUN_132abec4 =
+ *       TControl.SetVisible: grava +0x69 e envia CM_VISIBLECHANGED 0xB00B).
+ *    3. Chama o metodo virtual +0x1cc do formulario em *PTR_DAT_13811880.
+ *       INFERIDO: abre o dialogo de escolha de limite de FPS.  O mesmo slot
+ *       +0x1cc e usado pelos handlers de outros botoes deste form para abrir
+ *       outros formularios (ver 0x13727a00..0x13727a5b); a classe do form em
+ *       PTR_DAT_13811880 nao foi identificada.
+ *    Nao ha comando de shell, escrita de registro nem card de notificacao
+ *    neste handler.
  *
- *  FUNCOES
- *    FUN_137295a8 @ 0x137295a8  -- ativar   (vtable[0x188](obj+0x508, 1))
- *    FUN_1372987c @ 0x1372987c  -- restaurar (vtable[0x188](obj+0x508, 0))
+ *  DESLIGAR  (FPSUNLOCKED_ONClick @ 0x13729524)
+ *    1. Oculta FPSUNLOCKED_ON e exibe FPSUNLOCKED_OFF.
+ *    2. FUN_13728c00:
+ *         - FUN_132db2e0(*(*PTR_DAT_1381110c + 0x4fc), 0): zera o mesmo
+ *           controle que o secao 17 usa para o preset de FPS;
+ *         - remove uma chave cifrada (DAT_13728cac) do store de configuracoes
+ *           (FUN_1369ae6c, ver nota no fim da secao);
+ *         - oculta o controle +0x560 do form em DAT_13819fac.
+ *    3. FUN_13728cc4: oculta os controles +0x554, +0x558, +0x560, +0x514 e
+ *       +0x55c do form em DAT_13819fac (os tres ultimos sao os que o secao 17
+ *       preenche com o rotulo do preset).
+ *    4. Volta o texto do item [0][0] do ReetFPSSettingsPanel1 (campo +0x5f8,
+ *       categorias em +0x310, itens em +0x24) para "DESBLOQUEIO DE FPS"
+ *       (@ 0x13729580, UTF-16LE) via FUN_13574f7c, que so troca o texto
+ *       (item+0xc) e redesenha.
  *
- *  FLUXO DE ATIVACAO (FUN_137295a8)
- *    1. Verifica se o jogo esta rodando (PTR_DAT_13810cd8 e PTR_DAT_13811928);
- *       se nao: FUN_135fcd18() -- exibe "jogo nao encontrado".
- *    2. Oculta botao "ATIVAR" (param_1+0x484) e exibe "ATIVO" (param_1+0x480).
- *    3. Chama vtable[0x188](*(PTR_DAT_1381110c+0x508), 1) -- remove o cap.
- *    4. Atualiza label de status via FUN_1369b158 + DAT_1372977c / LAB_13729794.
- *    5. Se param_2 != 0: exibe card de notificacao via FUN_1358027c
- *       (strings lazy-init em DAT_137297cc / DAT_13729870).
- *
- *  FLUXO DE RESTAURACAO (FUN_1372987c)
- *    1. Oculta botao "ATIVO" (param_1+0x480) e exibe "ATIVAR" (param_1+0x484).
- *    2. Chama vtable[0x188](*(PTR_DAT_1381110c+0x508), 0) -- reativa o cap.
- *    3. Atualiza label via FUN_1369ae6c + DAT_13729938.
- *
- *  NOTA: o vtable offset 0x188 (metodo index 98) e o mesmo usado por outras
- *  features de toggle graficas neste binario (Game Bar, Vsync, etc.). O
- *  objeto em +0x508 e distinto dos objetos de preset em +0x4fc (FPS ILIMITADO)
- *  e +0x510 (outro toggle grafico).
+ *  RELACAO COM O secao 17
+ *    O DESBLOQUEADOR nao tem mecanismo proprio: ligar abre um dialogo
+ *    (INFERIDO: o de presets do secao 17) e desligar desfaz o estado do secao 17
+ *    (controle +0x4fc = 0, chave removida, rotulos ocultos).  Nada aqui
+ *    escreve no processo do Point Blank.
  */
 
-/* Verifica se o jogo esta ativo. Chama FUN_135fcd18 se nao.                 */
-extern void fps_verificar_jogo_ou_erro(void);  /* FUN_135fcd18 */
-
-/*
- * pb_desbloqueador_fps_ativar  --  FUN_137295a8 @ 0x137295a8
- *
- * Remove o cap de FPS do motor do Point Blank via vtable toggle.
- * param_1  : ponteiro para o painel da feature (TForm/VCL)
- * param_2  : se != 0, exibe card de notificacao apos aplicar
- */
-void pb_desbloqueador_fps_ativar(int painel, int mostrar_card)
+/* FUN_13728c00 @ 0x13728c00 */
+static void fps_desbloqueio_limpar_estado(void)
 {
-    if ((*(int *)PTR_DAT_13810cd8 == 0) && (*(int *)PTR_DAT_13811928 == 0)) {
-        fps_verificar_jogo_ou_erro();   /* FUN_135fcd18: jogo nao encontrado */
+    DelphiStr chave = NULL;
+
+    FUN_132db2e0(*(int *)(*(int *)PTR_DAT_1381110c + 0x4fc), 0);
+
+    decodificar_string(*(void **)PTR_DAT_13811378, (void *)0x13728cac, 0x46,
+                       /*chaves*/ &chave);
+    settings_remover(*(void **)PTR_DAT_13811bac, chave);      /* FUN_1369ae6c */
+
+    FUN_132abec4(*(int *)(DAT_13819fac + 0x560), 0);
+}
+
+/* FUN_13728cc4 @ 0x13728cc4 */
+static void fps_desbloqueio_ocultar_rotulos(void)
+{
+    FUN_132abec4(*(int *)(DAT_13819fac + 0x554), 0);
+    FUN_132abec4(*(int *)(DAT_13819fac + 0x558), 0);
+    FUN_132abec4(*(int *)(DAT_13819fac + 0x560), 0);
+    FUN_132abec4(*(int *)(DAT_13819fac + 0x514), 0);
+    FUN_132abec4(*(int *)(DAT_13819fac + 0x55c), 0);
+}
+
+/* FPSUNLOCKED_OFFClick @ 0x137294d8  -- liga */
+void pb_desbloqueador_fps_ativar(int form)
+{
+    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
+        FUN_135fcd18();                     /* aviso cifrado DAT_135fcdc0 */
         return;
     }
 
-    /* Atualiza botoes do painel: oculta ATIVAR, exibe ATIVO.               */
-    FUN_132abec4(*(int *)(painel + 0x484), 0);  /* oculta botao ATIVAR      */
-    FUN_132abec4(*(int *)(painel + 0x480), 1);  /* exibe  botao ATIVO       */
+    FUN_132abec4(*(int *)(form + 0x478), 0);    /* oculta FPSUNLOCKED_OFF */
+    FUN_132abec4(*(int *)(form + 0x474), 1);    /* exibe  FPSUNLOCKED_ON  */
 
-    /* Remove o cap de FPS: chama vtable[0x188](fps_cap_obj, 1).
-     * fps_cap_obj = *(*(PTR_DAT_1381110c) + 0x508)                         */
-    (**(void(**)(void *, int))
-        (**(int **)(*(int *)PTR_DAT_1381110c + 0x508) + 0x188))
-            (*(int **)(*(int *)PTR_DAT_1381110c + 0x508), 1);  /* 0x137295a8 */
-
-    /* Atualiza label de status no painel.                                   */
-    /* (strings lazy-init: DAT_1372977c / LAB_13729794 via FUN_134a8d98)    */
-
-    /* Exibe card de notificacao se solicitado.                              */
-    if (mostrar_card) {
-        /* DAT_137297cc = texto de notificacao (lazy-init UTF-16LE)         */
-        /* DAT_13729870 = subtitulo do card (lazy-init)                     */
-        FUN_1358027c(/*titulo*/ 0, /*subtitulo*/ 0, 0x1194);  /* 0x1358027c */
-    }
+    /* INFERIDO: abre o dialogo de limite de FPS (classe nao identificada). */
+    (**(void (**)(void))(**(int **)PTR_DAT_13811880 + 0x1cc))();
 }
 
-/*
- * pb_desbloqueador_fps_restaurar  --  FUN_1372987c @ 0x1372987c
- *
- * Reativa o cap de FPS original do Point Blank.
- */
-void pb_desbloqueador_fps_restaurar(int painel)
+/* FPSUNLOCKED_ONClick @ 0x13729524  -- desliga */
+void pb_desbloqueador_fps_restaurar(int form)
 {
-    /* Atualiza botoes: exibe ATIVAR, oculta ATIVO.                          */
-    FUN_132abec4(*(int *)(painel + 0x480), 0);  /* oculta botao ATIVO       */
-    FUN_132abec4(*(int *)(painel + 0x484), 1);  /* exibe  botao ATIVAR      */
+    int item;
 
-    /* Reativa o cap: vtable[0x188](fps_cap_obj, 0).                        */
-    (**(void(**)(void *, int))
-        (**(int **)(*(int *)PTR_DAT_1381110c + 0x508) + 0x188))
-            (*(int **)(*(int *)PTR_DAT_1381110c + 0x508), 0);  /* 0x1372987c */
+    FUN_132abec4(*(int *)(form + 0x474), 0);    /* oculta FPSUNLOCKED_ON  */
+    FUN_132abec4(*(int *)(form + 0x478), 1);    /* exibe  FPSUNLOCKED_OFF */
 
-    /* Atualiza label de status (DAT_13729938 via FUN_1369ae6c).            */
+    fps_desbloqueio_limpar_estado();            /* FUN_13728c00 */
+    fps_desbloqueio_ocultar_rotulos();          /* FUN_13728cc4 */
+
+    item = FUN_135750f8(*(int *)(FUN_13575414(
+               *(int *)(*(int *)(form + 0x5f8) + 0x310), 0) + 0x24), 0);
+    FUN_13574f7c(item, L"DESBLOQUEIO DE FPS");  /* @ 0x13729580 */
 }
 
-/* Externs desta secao.                                                       */
-extern void FUN_132abec4(int controle, int visivel);
-extern void FUN_1358027c(int titulo_str, int corpo_str, int duracao);
-extern int *PTR_DAT_1381110c;   /* manager principal: objeto em +0x508 = fps cap */
-extern int *PTR_DAT_13810cd8;   /* flag: processo do jogo ativo                  */
-extern int *PTR_DAT_13811928;   /* flag: jogo em execucao (segunda verificacao)  */
+/* Auxiliares desta secao (assinaturas conferidas no decompilado).
+ *
+ * decodificar_string = FUN_134a8d98: (ctx, blob, tamanho, chaves..., &saida).
+ *   EAX = *PTR_DAT_13811378, EDX = blob cifrado, ECX = tamanho; na pilha,
+ *   na ordem de push: chave2, chave1, &saida.  Nao exibe nada: so devolve a
+ *   string decodificada.  Por isso os textos destas telas nao aparecem em
+ *   claro no binario.
+ *
+ * settings_gravar = FUN_1369b158 (store, chave, valor) e
+ * settings_remover = FUN_1369ae6c (store, chave): ambos carregam o documento
+ *   JSON guardado em PTR_DAT_13811610 (classe em PTR_LAB_133d2d08), procuram
+ *   a chave (FUN_133e28dc), removem (FUN_133dd464) e/ou adicionam o par
+ *   (FUN_133dd2e0) e serializam de volta.  store = *PTR_DAT_13811bac.
+ *   INFERIDO: e o arquivo de configuracoes do ReetFPS; a gravacao em disco
+ *   nao foi rastreada.
+ */
+extern void decodificar_string(void *ctx, const void *blob, int tamanho, ...);
+extern void settings_gravar(void *store, DelphiStr chave, DelphiStr valor);
+extern void settings_remover(void *store, DelphiStr chave);
+extern void FUN_132db2e0(int controle, int valor);
+extern int  FUN_13575414(int lista, int indice);
+extern int  FUN_135750f8(int lista, int indice);
+extern void FUN_13574f7c(int item, const wchar_t *texto);
+extern void FUN_135fcd18(void);
+extern int *PTR_DAT_13811880;   /* form aberto pelo botao FPSUNLOCKED_OFF   */
+extern int *PTR_DAT_13811378;   /* contexto do decodificador de strings    */
+extern int *PTR_DAT_13811bac;   /* store de configuracoes (JSON)           */
+extern int  DAT_13819fac;       /* form com os rotulos de FPS (+0x514...)  */
 
 
 /* ===========================================================================
- *  21) IMPULSIONAR POINTBLANK  (interno: "FPS Game Booster" / TGameBooster)
+ *  21) IMPULSIONAR POINTBLANK  (tela "FPS Game Booster" / TGameBooster)
  * ===========================================================================
  *
- *  Ativa um "booster" do motor do Point Blank via toggle direto na vtable,
- *  similar ao §20 (DESBLOQUEADOR DE FPS), mas usando o objeto no slot +0x500
- *  do manager (vs. +0x508 do DESBLOQUEADOR e +0x4fc do FPS ILIMITADO).
+ *  A TELA
+ *    TGameBooster (unidade UGameBooster) e o formulario onde ficam os botoes
+ *    liga/desliga de varios recursos do PB.  Strings conferidas:
+ *      " FPS Game Booster"                         @ 0x136ea1e8
+ *      "Ative a configuracao recomendada para priorizar fluidez, desempenho
+ *       e estabilidade no PointBlank."             @ 0x136ea218 (UTF-16LE)
+ *      "BOOST ATIVO"                               @ 0x1356f25c
+ *      "INICIAR POINTBLANK" / "INICIAR JOGO"       @ 0x136f47fc / 0x136f4830
+ *      "Launcher encontrado. Abra o PointBlank e acesse rapidamente o FPS
+ *       Game Booster."                             @ 0x136f4858
+ *      "PB LOCALIZADO"                             @ 0x136f4904
+ *      "Validando FPS Game Booster"                @ 0x136e9b94
+ *      "Conferindo ajustes pendentes"              @ 0x136e9bd8
+ *      "FirstAccessPointBlankBoosterApplied"       @ 0x136ea420,
+ *                                                    0x136f16dc, 0x136f1bd0
+ *    Nenhuma dessas strings e referenciada pelas funcoes abaixo; nao ha
+ *    string "IMPULSIONAR" no binario.  Os nomes "TGameBooster.FormCreate",
+ *    "...FormShow" e "...StartPointBlankFromAssistant" (@ 0x13733533,
+ *    0x137338f7, 0x137320c6) sao registros de metodo anonimo ($ActRec), nao
+ *    entradas de RTTI de metodo.
  *
- *  O modulo tambem localiza o PBLauncher.exe (via GamePath + registro) e
- *  oferece botoes para iniciar o jogo diretamente a partir do assistente.
+ *  QUAL BOTAO E O "IMPULSIONAR"
+ *    INFERIDO: o par PRIORITYPB_ON / PRIORITYPB_OFF (campos +0x56c / +0x570,
+ *    painel PANEL_PRIORITYPB +0x564).  "PRIORITYPB" tambem e a chave do item
+ *    de prioridade na lista de recomendacoes (@ 0x136ed0c4).  Nenhuma string liga
+ *    "IMPULSIONAR POINTBLANK" a este botao.
+ *      PRIORITYPB_OFFClick @ 0x1372e888   (liga)
+ *      PRIORITYPB_ONClick  @ 0x1372ebb0   (desliga)
  *
- *  CLASSE DELPHI: TGameBooster  (unidade UGameBooster)
- *    RTTI @ UGameBooster strings: 0x13727395, 0x1372c330, 0x13733583
- *    Metodos RTTI:
- *      FormCreate               @ 0x13733533  (inicializacao do formulario)
- *      FormShow                 @ 0x137338f7  (abertura do painel)
- *      StartPointBlankFromAssistant @ 0x137320c6  (inicia PB direto)
- *      ReetFPSSettingsPanel1...ToggleOff @ 0x1372c296
- *      ReetFPSSettingsPanel1...ToggleOn  @ 0x1372c89f
+ *  LIGAR  (PRIORITYPB_OFFClick @ 0x1372e888)
+ *    1. Oculta PRIORITYPB_OFF (+0x570) e exibe PRIORITYPB_ON (+0x56c).
+ *    2. _DAT_138103f8 = -1  (flag global ligada).
+ *       INFERIDO: e a flag que libera a elevacao de prioridade do processo
+ *       do PB (secao 3-secao 6); o leitor da flag nao foi localizado.
+ *    3. Grava um par chave/valor cifrado no store de configuracoes
+ *       (chave DAT_1372ead8, valor DAT_1372eac0; settings_gravar).
+ *    4. Se param_2 != 0: monta titulo/corpo cifrados (DAT_1372eb0c,
+ *       DAT_1372eb58, DAT_1372eba4) e mostra o card via FUN_1358027c.
  *
- *  STRINGS DE UI
- *    " FPS Game Booster"                @ 0x136ea1e8  (label do painel)
- *    "Ative a configuracao recomendada para priorizar fluidez, desempenho
- *     e estabilidade no PointBlank."    @ 0x136ea208  (descricao)
- *    "BOOST ATIVO"                      @ 0x1356f25c  (label botao ativo)
- *    "INICIAR POINTBLANK"               @ 0x136f47fc  (botao de lancamento)
- *    "INICIAR JOGO"                     @ 0x136f4830  (alias do botao)
- *    "PB LOCALIZADO"                    @ 0x136f4870  (status de busca)
- *    "Launcher encontrado. Abra o PointBlank e acesse rapidamente o FPS
- *     Game Booster."                    @ 0x136f4858
- *    "Validando FPS Game Booster"       @ 0x136e9b94  (progresso validacao)
- *    "Conferindo ajustes pendentes"     @ 0x136e9bc0  (progresso)
- *    "Preparando recomendacoes finais"  @ 0x136e9be8  (progresso)
+ *  DESLIGAR  (PRIORITYPB_ONClick @ 0x1372ebb0)
+ *    Exibe PRIORITYPB_OFF, oculta PRIORITYPB_ON, _DAT_138103f8 = 0 e remove
+ *    a chave cifrada DAT_1372ec5c do store.
  *
- *  CHAVE DE ESTADO: "FirstAccessPointBlankBoosterApplied" @ 0x136ea420
- *    (tambem em 0x136f16dc e 0x136f1bd0 -- lida em dois contextos distintos)
+ *  CORRECAO DE VERSOES ANTERIORES
+ *    As funcoes antes documentadas aqui e no secao 20 sao outros botoes do
+ *    mesmo form:
+ *      0x13728234 = COUNTERPING_OFFClick, 0x13728578 = COUNTERPING_ONClick
+ *        (contador de ping; botoes +0x580 / +0x57c);
+ *      0x137295a8 = REETSTATS_OFFClick,   0x1372987c = REETSTATS_ONClick
+ *        (botoes +0x484 / +0x480).
+ *    Esses quatro handlers chamam o metodo virtual +0x188 de controles em
+ *    *PTR_DAT_1381110c (+0x500 e +0x508) com 1/0.  INFERIDO: e o setter
+ *    Checked de um controle do overlay, porque FUN_13696e3c sincroniza do
+ *    mesmo jeito o controle +0x550 e logo depois chama FUN_13687120, que e
+ *    o SetChecked animado de um checkbox (estado em +0x2e4, timer de 16 ms).
+ *    Nenhum deles remove "cap de FPS" nem ativa "booster" no motor do jogo.
+ *    0x13727a00 e BUTTON_APPLY_CROSSClick (abre o form em PTR_DAT_13810ae8
+ *    pelo slot +0x1cc e ajusta a selecao da lista em +0x608 com
+ *    FUN_1372f160); nao inicia o PB.  O handler real de iniciar o jogo e
+ *    BUTTON_STARTPBClick @ 0x13730064 (nao reconstruido).
  *
- *  COMPARACAO COM §17 / §20
- *    FPS ILIMITADO  (§17): slot +0x4fc, preset numerico, persiste no registro
- *    DESBLOQUEADOR  (§20): slot +0x508, toggle binario, sem registro
- *    IMPULSIONAR    (§21): slot +0x500, toggle binario + validacao de caminho do PB
- *
- *  FUNCOES PRINCIPAIS
- *    FUN_13727a5c @ 0x13727a5c  -- validacao / sequencia de progresso
- *    FUN_13728234 @ 0x13728234  -- ativar booster (toggle=1)
- *    FUN_13728578 @ 0x13728578  -- restaurar     (toggle=0)
- *    FUN_13727a00 @ 0x13727a00  -- iniciar PB pelo assistente
+ *  FUN_13727a5c (sem nome na tabela de metodos)
+ *    Decodifica 15 chaves cifradas (DAT_13727f88..DAT_13728178) e remove cada
+ *    uma do store (FUN_1369ae6c), atribui valores fixos a 20 globais
+ *    (ex.: PTR_DAT_138116e4 = 3, PTR_DAT_138117c4 = 7, PTR_DAT_1381147c = 1)
+ *    e redesenha o painel +0x608 do form em DAT_13819fac.  E um reset de
+ *    configuracoes; nao localiza o launcher e nao exibe as strings de
+ *    progresso em claro.  INFERIDO: e o "aplicar configuracao recomendada"
+ *    do primeiro acesso (FirstAccessPointBlankBoosterApplied); quem chama
+ *    nao foi localizado.
  */
 
-/*
- * pb_impulsionar_pb_validar  --  FUN_13727a5c @ 0x13727a5c
- *
- * Roda ao abrir o painel: exibe 15 mensagens de progresso via FUN_134a8d98
- * + FUN_1369ae6c, define ~20 globais de estado e faz scroll do painel.
- * Localiza PBLauncher.exe lendo GamePath e registros do sistema.
- */
-void pb_impulsionar_pb_validar(void)
+/* PRIORITYPB_OFFClick @ 0x1372e888  -- liga */
+void pb_impulsionar_pb_ativar(int form, int mostrar_card)
 {
-    /* Sequencia de progresso (FUN_134a8d98 + FUN_1369ae6c repete ~15x): */
-    /* "Validando FPS Game Booster"       @ 0x136e9b94 */
-    /* "Conferindo ajustes pendentes"     @ 0x136e9bc0 */
-    /* "Preparando recomendacoes finais"  @ 0x136e9be8 */
-    /* ... (mais mensagens em DAT_13727f88..DAT_13728178) */
-    notificar_progresso_booster(); /* FUN_134a8d98 x15 + FUN_1369ae6c x15 */
+    DelphiStr valor = NULL, chave = NULL;
+    DelphiStr titulo = NULL, corpo = NULL;
 
-    /* Define estados internos do gerenciador (20 globais PTR_DAT_*).
-     * Ex: PTR_DAT_138116e4=3, PTR_DAT_138117c4=7, PTR_DAT_1381147c=1, etc.
-     * Estes controlam quais subsistemas o booster pode tocar.             */
+    FUN_132abec4(*(int *)(form + 0x570), 0);    /* oculta PRIORITYPB_OFF */
+    FUN_132abec4(*(int *)(form + 0x56c), 1);    /* exibe  PRIORITYPB_ON  */
 
-    /* Atualiza o scroll do formulario principal.                          */
-    /* FUN_132ac618(DAT_13819fac) + vtable[0xe0]                           */
-}
+    _DAT_138103f8 = -1;
 
-/*
- * pb_impulsionar_pb_ativar  --  FUN_13728234 @ 0x13728234
- *
- * Ativa o FPS Game Booster: verifica jogo, atualiza UI e chama
- * vtable[0x188](obj+0x500, 1) no manager principal.
- *
- * param_1 : ponteiro para o painel TGameBooster
- * param_2 : se != 0, exibe card de notificacao
- */
-void pb_impulsionar_pb_ativar(int painel, int mostrar_card)
-{
-    if ((*(int *)PTR_DAT_13810cd8 == 0) && (*(int *)PTR_DAT_13811928 == 0)) {
-        FUN_135fcd18();  /* jogo nao encontrado */
-        return;
-    }
+    /* chaves de decodificacao omitidas: o decompilado embaralha os pushes */
+    decodificar_string(*(void **)PTR_DAT_13811378, (void *)0x1372eac0, 0x16,
+                       /*chaves*/ &valor);
+    decodificar_string(*(void **)PTR_DAT_13811378, (void *)0x1372ead8, 0x99,
+                       /*chaves*/ &chave);
+    settings_gravar(*(void **)PTR_DAT_13811bac, chave, valor);  /* FUN_1369b158 */
 
-    /* Exibe mensagem de status (DAT_13728488, 0xb8 chars).                */
-    FUN_134a8d98(*(int *)PTR_DAT_13811378, (void *)0x13728488, 0xb8);
-    /* Exibe segunda linha de status (DAT_137284a0, 6 chars).              */
-    FUN_134a8d98(*(int *)PTR_DAT_13811378, (void *)0x137284a0, 6);
-
-    /* Troca botoes: oculta "BOOST", exibe "BOOST ATIVO".                  */
-    FUN_132abec4(*(int *)(painel + 0x580), 0);  /* oculta BOOST           */
-    FUN_132abec4(*(int *)(painel + 0x57c), 1);  /* exibe  BOOST ATIVO     */
-
-    /* Ativa o booster: vtable[0x188](*(PTR_DAT_1381110c+0x500), 1).       */
-    (**(void(**)(void *, int))
-        (**(int **)(*(int *)PTR_DAT_1381110c + 0x500) + 0x188))
-            (*(int **)(*(int *)PTR_DAT_1381110c + 0x500), 1); /* @ 0x13728234 */
-
-    /* Exibe card de notificacao se solicitado.                             */
     if (mostrar_card) {
-        /* Strings lazy-init em DAT_137284bc, DAT_137284d4, DAT_13728524,
-         * DAT_1372856c — construidas por FUN_134a8d98 + FUN_1314c17c.    */
-        FUN_1358027c(0, 0, 0x1194);  /* card padrao via FUN_1358027c       */
+        /* titulo, corpo e icone tambem sao strings cifradas
+         * (LAB_1372eaf4, DAT_1372eb0c, DAT_1372eb58, DAT_1372eba4).       */
+        FUN_1358027c(titulo, corpo, 0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+                     /*icone*/ NULL, -1, -1, -1, 1, 1, 1);
     }
 }
 
-/*
- * pb_impulsionar_pb_restaurar  --  FUN_13728578 @ 0x13728578
- *
- * Desativa o booster: reverte os botoes e chama vtable toggle=0.
- */
-void pb_impulsionar_pb_restaurar(int painel)
+/* PRIORITYPB_ONClick @ 0x1372ebb0  -- desliga */
+void pb_impulsionar_pb_restaurar(int form)
 {
-    /* Exibe status de desativacao (DAT_13728634, 6 chars).                */
-    FUN_134a8d98(*(int *)PTR_DAT_13811378, (void *)0x13728634, 6);
+    DelphiStr chave = NULL;
 
-    /* Troca botoes: exibe "BOOST", oculta "BOOST ATIVO".                  */
-    FUN_132abec4(*(int *)(painel + 0x580), 1);  /* exibe  BOOST           */
-    FUN_132abec4(*(int *)(painel + 0x57c), 0);  /* oculta BOOST ATIVO     */
+    FUN_132abec4(*(int *)(form + 0x570), 1);    /* exibe  PRIORITYPB_OFF */
+    FUN_132abec4(*(int *)(form + 0x56c), 0);    /* oculta PRIORITYPB_ON  */
 
-    /* Desativa: vtable[0x188](*(PTR_DAT_1381110c+0x500), 0).              */
-    (**(void(**)(void *, int))
-        (**(int **)(*(int *)PTR_DAT_1381110c + 0x500) + 0x188))
-            (*(int **)(*(int *)PTR_DAT_1381110c + 0x500), 0); /* @ 0x13728578 */
+    _DAT_138103f8 = 0;
+
+    decodificar_string(*(void **)PTR_DAT_13811378, (void *)0x1372ec5c, 0x36,
+                       /*chaves*/ &chave);
+    settings_remover(*(void **)PTR_DAT_13811bac, chave);       /* FUN_1369ae6c */
 }
 
-/*
- * pb_impulsionar_iniciar_jogo  --  FUN_13727a00 @ 0x13727a00
- *
- * Inicia o Point Blank diretamente pelo assistente (botoes "INICIAR
- * POINTBLANK" / "INICIAR JOGO" @ 0x136f47fc / 0x136f4830).
- */
-void pb_impulsionar_iniciar_jogo(int param_1)
+/* FUN_13727a5c @ 0x13727a5c  -- reset das configuracoes da tela */
+void pb_game_booster_resetar_config(void)
 {
-    (**(void(**)())(*(int *)PTR_DAT_13810ae8 + 0x1cc))(); /* vtable[0x1cc] */
-    FUN_1372f160(param_1);
+    /* 15x: decodificar_string(DAT_13727f88 .. DAT_13728178) + settings_remover */
+
+    *(int *)PTR_DAT_138116e4 = 3;  *(int *)PTR_DAT_138113d4 = 0;
+    *(int *)PTR_DAT_13811170 = 0;  *(int *)PTR_DAT_13810ac4 = 3;
+    *(int *)PTR_DAT_138117c4 = 7;  *(int *)PTR_DAT_1381147c = 1;
+    *(int *)PTR_DAT_13811244 = 0;  *(int *)PTR_DAT_13810b8c = 3;
+    *(int *)PTR_DAT_138110a0 = 5;  *(int *)PTR_DAT_13810cf4 = 3;
+    *(int *)PTR_DAT_13810aa8 = 0;  *(int *)PTR_DAT_138119c8 = 3;
+    *(int *)PTR_DAT_13810aec = 7;  *(int *)PTR_DAT_13811cf8 = 3;
+    *(int *)PTR_DAT_13811ad8 = 0;  *(int *)PTR_DAT_138114bc = 3;
+    *(int *)PTR_DAT_13811464 = 3;  *(int *)PTR_DAT_1381112c = 2;
+    *(int *)PTR_DAT_13810ea4 = 0;  *(int *)PTR_DAT_13811d8c = 3;
+
+    FUN_132ac618(DAT_13819fac);                 /* vtable +0xe4 do form   */
+    (**(void (**)(void))(**(int **)(DAT_13819fac + 0x608) + 0xe0))();
 }
 
-/* Externs desta secao.                                                    */
-extern void  FUN_134a8d98(int painel, void *str_data, int comprimento, ...);
-extern void  FUN_1369ae6c(int barra, int str);
-extern void  FUN_135fcd18(void);          /* "jogo nao encontrado"        */
-extern void  FUN_1372f160(int param_1);   /* inicia PBLauncher            */
-extern void  notificar_progresso_booster(void); /* sequencia de validacao */
-extern int  *PTR_DAT_13810ae8;  /* launcher handle                        */
-extern int  *PTR_DAT_13811bac;  /* barra de status                        */
-/* PTR_DAT_1381110c, PTR_DAT_13810cd8, PTR_DAT_13811928 ja declarados §20 */
+/* Auxiliares desta secao.
+ *
+ * FUN_1358027c @ 0x1358027c -- card de notificacao, 16 parametros:
+ *   EAX = titulo, EDX = corpo, ECX = duracao em ms (0x1194 = 4500); na pilha
+ *   p4..p8 = 5, 0xe, 0xc, 0xa0, 0x17c; p9 (byte) = 0xf5; p10 = icone
+ *   (string, 0 = sem imagem); p11..p13 = int, -1 = padrao; p14..p16 = bytes.
+ *   Conferido pela desmontagem de 0x13729680..0x13729705.
+ */
+extern void FUN_1358027c(DelphiStr titulo, DelphiStr corpo, int duracao_ms,
+                         int p4, int p5, int p6, int p7, int p8,
+                         uint8_t p9, const wchar_t *icone,
+                         int p11, int p12, int p13,
+                         uint8_t p14, uint8_t p15, uint8_t p16);
+extern void FUN_132abec4(int controle, int visivel);  /* TControl.SetVisible */
+extern void FUN_132ac618(int form);
+extern int  _DAT_138103f8;      /* flag do PRIORITYPB */
+/* PTR_DAT_1381110c, PTR_DAT_13810cd8, PTR_DAT_13811928, PTR_DAT_138116e4 etc.
+ * sao globais do binario (ponteiros para variaveis Delphi).                 */
 
 
 /* ===========================================================================
