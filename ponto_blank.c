@@ -737,94 +737,109 @@ extern void   pb_salvar_estado_diario(TPointBlankMantain *ctx); /* FUN_1359e8ec 
  * ========================================================================== */
 
 /* ===========================================================================
- *  9. PERFIL FLUIDEZMAX -- "CARREGAMENTO DE MAPA OTIMIZADO"
+ *  9. PERFIL FLUIDEZMAX ("Fluidez maxima") E A LISTA DE RECOMENDACOES
  * ===========================================================================
  *
  *  Enderecos-chave:
  *    0x13700af0  -- pb_ativar_fluidezmax() (entry point que ativa o perfil)
  *    0x137008d0  -- FUN_137008d0 = TReetGameModePanel.ExecuteGameModeActions
- *                  (coleta itens habilitados e despacha execucao em thread)
- *    0x136ecb00  -- tabela de dados do perfil FLUIDEZMAX (strings UTF-16LE)
- *    0x136ece50  -- string "Carregamento de mapa otimizado" (descricao do perfil)
- *    0x136ecc5c  -- string "FLUIDEZMAX" (chave do perfil)
+ *                  (coleta itens habilitados e despacha execucao em task)
+ *    0x136ec13c  -- FUN_136ec13c: monta a LISTA DE RECOMENDACOES (dois grupos
+ *                  de itens, ver tabela abaixo). Cada item e acrescentado por
+ *                  FUN_136ebbb4 a um array dinamico em (form + 0x340).
  *
- *  O FLUIDEZMAX nao e uma unica funcao de "mapas instantaneos" -- e um PERFIL
- *  (preset) que ativa sete itens de otimizacao em conjunto. A sensacao de
- *  carregamento instantaneo e o efeito combinado de todos eles eliminando
- *  competicao por recursos durante o carregamento de mapa.
- *
- *  -----------------------------------------------------------------------
- *  ITENS DO PERFIL (tabela em 0x136ecb00, formato UTF-16LE triplas: chave,
- *  icone/nome-curto, descricao; cabecalho de entrada: b0 04 02 00 ff ff ff ff)
- *  -----------------------------------------------------------------------
- *
- *  #  Chave                  Icone/label     O que faz
- *  -- --------------------  --------------  ---------------------------------
- *  0  FLUIDEZMAX             -               CABECALHO do perfil; user-facing:
- *                                            "Carregamento de mapa otimizado"
- *  1  fullscreen             FULLSCREEN      Forca PB em fullscreen exclusivo.
- *                                            DWM e desativado -> menos pressao
- *                                            de GPU/VRAM durante loading.
- *  2  OTIMIZER_PB_MANAGER    -               Ativa o TPointBlankStabilityMonitor
- *                                            (o gerenciador automatico do jogo).
- *  3  smart                  Gestao          Liga modo "Gestao Inteligente": o
- *                            Inteligente     monitor aplica/reverte tweaks em
- *                                            sincronia com o ciclo de vida do PB.
- *  4  PRIORITYPB             rocket          Aplica as tres camadas de prioridade:
- *                                            CPU (pb_elevar_prioridade_cpu),
- *                                            D3DKMT (pb_elevar_prioridade_gpu),
- *                                            e Priority Boost (pb_elevar_priority_boost).
- *  5  INTERFACE              window          Configura o modo de janela/interface
- *                                            do PB conforme perfil recomendado.
- *  6  FPS_SELECTION_INDEX    speed           Le o indice de FPS recomendado do
- *                                            arquivo INI do PB (secao [Graphics],
- *                                            chave FPSType/FPSVal) e aplica o
- *                                            limite de FPS correto para o perfil.
- *  7  REETGAMEMODE           gamepad         Habilita o Windows Game Mode para
- *                                            a sessao, elevando a prioridade de
- *                                            I/O e CPU do PB no scheduler.
- *                                            (TReetGameModePanel @ 0x136f90d7)
+ *  FLUIDEZMAX e uma das recomendacoes, nao o nome da tabela inteira:
+ *    chave  "FLUIDEZMAX"
+ *    label  "Fluidez maxima"                                 @ 0x136ecd34
+ *    desc   "Ative a otimizacao de fluidez maxima para priorizar o melhor
+ *            comportamento do jogo."                         @ 0x136ecc80
+ *  O texto "Carregamento de mapa otimizado" (@ 0x136ece50) e o label do
+ *  item LOADINGMAP, nao do FLUIDEZMAX.
  *
  *  -----------------------------------------------------------------------
- *  POR QUE OS MAPAS CARREGAM "INSTANTANEAMENTE"
+ *  LISTA DE RECOMENDACOES (FUN_136ec13c @ 0x136ec13c)
  *  -----------------------------------------------------------------------
+ *  Registro de 0x14 bytes em (form+0x340), preenchido por FUN_136ebbb4:
+ *    +0x00 chave   +0x04 label   +0x08 descricao   +0x0c icone
+ *    +0x10 byte (5o parametro: 0 no grupo Windows, 1 no grupo PointBlank)
+ *    +0x11 byte (4o parametro: sempre 1 nas chamadas abaixo)
  *
- *  Nao ha uma chamada API de "preload de mapa". O efeito vem de:
+ *  GRUPO "Windows"  -- so montado se (form+0x310) == 0; cada item so entra
+ *  se FUN_136ebfbc(chave) for verdadeiro (= !FUN_136ebcdc(chave)):
+ *    chave                 label                               icone
+ *    --------------------  ----------------------------------  --------
+ *    Energia_ON            "Windows Turbo +FPS"                bolt
+ *    Hibernate_ON          (DAT_136ec660)                      power
+ *    Cortana_ON            "Desativar Cortana"                 chat
+ *    TarefaTelemetria_ON   "Desativar telemetria do Windows"   chart
+ *    Superfetch_ON         "Desativar Superfetch"              database
+ *    ADMENU_ON             (DAT_136ecb14)                      bell
+ *    OpMouse_ON            "Otimizar mouse"                    mouse
  *
- *    a) Fullscreen exclusivo (item 1): o DWM para de compor a janela do PB,
- *       liberando GPU e VRAM que seriam gastos na composicao -- mais recursos
- *       disponiveis para carregar assets do mapa.
+ *  GRUPO "PointBlank" -- so montado se (form+0x311) == 0; cada item so entra
+ *  se FUN_136ebfd0(chave) retornar 0 (consulta um evento do form em +0x428):
+ *    chave                 label                               icone     descricao
+ *    --------------------  ----------------------------------  --------  ---------
+ *    FLUIDEZMAX            "Fluidez maxima" @ 0x136ecd34       bolt      @ 0x136ecc80
+ *    LOADINGMAP            "Carregamento de mapa otimizado"    clock     "Melhora as configuracoes relacionadas
+ *                                                                         ao carregamento para reduzir
+ *                                                                         interferencias." @ 0x136ecd84
+ *    FULLSCREEN            "Tela cheia otimizada"              fullscreen "Aplica o modo tela cheia recomendado
+ *                                                                         para reduzir interferencias visuais
+ *                                                                         e melhorar estabilidade." @ 0x136ecec0
+ *    OPTIMIZER_PB_MANAGER  "Otimizacao Inteligente" @0x136ed088 smart    "Otimiza os recursos do Windows."
+ *    PRIORITYPB            "Prioridade do PointBlank"          rocket    "Ajusta a prioridade do jogo para
+ *                                                                         melhorar a resposta durante a partida."
+ *    INTERFACE             "Interface otimizada"               window    "Aplica os ajustes recomendados de
+ *                                                                         interface para melhor estabilidade e
+ *                                                                         fluidez."
+ *    FPS_SELECTION_INDEX   "FPS recomendado"                   speed     "Aplica o indice de FPS recomendado
+ *                                                                         pela CFG oficial do PointBlank."
+ *                                                                         @ 0x136ed330
+ *    REETGAMEMODE          "Game Mode ReetFPS"                 gamepad   "Ativa o modo de jogo recomendado para
+ *                                                                         completar o perfil do PointBlank."
  *
- *    b) Prioridade ABOVE_NORMAL + D3DKMT + Priority Boost (item 4): o
- *       scheduler da CPU da mais tempo de CPU ao PB exatamente quando ele
- *       esta fazendo I/O intenso (descompactando assets, carregando texturas).
- *       Priority Boost amplifica o efeito quando threads de I/O saem de espera.
+ *  Obs.: "fullscreen" e "smart" sao ICONES, nao chaves (a versao anterior
+ *  desta secao os tratava como chaves e escrevia "OTIMIZER_PB_MANAGER").
  *
- *    c) Windows Game Mode (item 7): o scheduler de I/O do Windows da maior
- *       prioridade ao PB para operacoes de leitura em disco -- mapas sao
- *       carregados de arquivos grandes e isso reduz a fila de I/O.
+ *  DESPACHANTE DAS CHAVES DO GRUPO PointBlank (rotina @ 0x136f78d0, sem
+ *  funcao definida no Ghidra). Se o form global *(PTR_DAT_13810970) for nulo
+ *  levanta excecao (mensagem @ 0x136f7a98). Depois compara a chave (ECX) com
+ *  cada string via FUN_1316c388 e, no primeiro acerto, chama
+ *  FUN_136f782c(handler, form):
+ *    chave (string comparada)                    handler
+ *    ------------------------------------------  ----------
+ *    "FLUIDEZMAX" @0x136f7ae0 ou
+ *    "FLUIDEZMAXIMA" @0x136f7b04                  0x1372a03c
+ *    "FULLSCREEN" @0x136f7b2c                     0x1372dfb0
+ *    "OPTIMIZER_PB_MANAGER" @0x136f7b50           0x13729094
+ *    "FPS_SELECTION_INDEX" @0x136f7b88            0x137294d8
+ *    "PRIORITYPB" @0x136f7bbc                     0x1372e888
+ *    "LOADINGMAP" @0x136f7be0                     0x13728d20
+ *    "INTERFACE" @0x136f7c04                      0x1372d4b8
+ *    "REETGAMEMODE" @0x136f7c24                   0x1372c00c
+ *  Obs.: OPTIMIZER_PB_MANAGER vai para 0x13729094; FUN_13600598 e outra
+ *  rotina (reparo do sistema), nao este item.
+ *  INFERIDO: o corpo de cada handler nao foi analisado nesta secao.
  *
- *    d) Gestao Inteligente (itens 2+3): o monitor aplica TODOS os tweaks do
- *       catalogo da categoria CPU_GPU_PRIORITY e POWER exatamente quando o
- *       PB esta subindo -- so nessa janela de tempo critica.
+ *  INFERIDO: nao foi comprovado que este array em (form+0x340) seja a mesma
+ *  lista (form+0x2e0) que FUN_137008d0 executa -- os offsets sao diferentes.
+ *  As descricoes da tabela acima sao so os textos da UI. Afirmacoes antigas desta secao (OPTIMIZER_PB_MANAGER
+ *  ativa o TPointBlankStabilityMonitor; FPS_SELECTION_INDEX le
+ *  [Graphics] FPSType/FPSVal do INI; REETGAMEMODE liga o Windows Game Mode)
+ *  NAO foram verificadas no binario e foram retiradas.
  *
  *  -----------------------------------------------------------------------
- *  ITENS SEPARADOS: LIMPEZA DE CACHE (nao fazem parte do FLUIDEZMAX, mas
- *  sao opcionais na mesma tela -- tabela em 0x1366c900)
+ *  ITENS SEPARADOS: LIMPEZA DE CACHE (tabela em 0x1366c900, ver secao 11)
  *  -----------------------------------------------------------------------
  *
  *  Chave                   Path/Alvo                            Aviso
  *  ----------------------  -----------------------------------  --------------------
- *  prefetch                %WINDIR%\Prefetch                    "Seguro, mas programas
- *                          (limpa *.pf -- arquivos de cache     podem abrir mais
- *                           do prefetcher do Windows)           devagar na 1a vez"
+ *  prefetch                "%WINDIR%\Prefetch" @ 0x1366ca58     "Seguro, mas programas
+ *                          (conteudo do diretorio)              podem abrir mais
+ *                                                               devagar na 1a vez"
  *  driver_extract_cache    %SystemDrive%\NVIDIA\DisplayDriver\* "Seguro..."
- *                          (limpa cache de extracao de drivers
- *                           NVIDIA que ficam em disco)
- *
- *  A limpeza de Prefetch libera espaco em disco e remove dados obsoletos do
- *  prefetcher (que ja e desabilitado pelos tweaks do catalogo via reg add
- *  PrefetchParameters). Nao e a causa primaria do loading rapido.
+ *                          (cache de extracao de drivers NVIDIA)
  */
 
 /* Estrutura de um item do perfil FLUIDEZMAX (campos reconstruidos da tabela
@@ -865,8 +880,10 @@ void pb_ativar_fluidezmax(void *panel)
  *
  * Dado o painel (TReetGameModePanel), percorre a lista de itens em
  * panel->+0x2e0, conta os que estao habilitados (item->+0x24 != 0),
- * cria um array de triplas (chave, icone, descricao) e dispara um
- * thread/dialog de progresso para executar cada item em sequencia.
+ * copia os campos +0xc/+0x1c/+0x20 de cada um para um array de triplas,
+ * cria um TStringList auxiliar e despacha a execucao em task
+ * (FUN_13219b0c + FUN_1321a804).
+ * INFERIDO: os nomes chave/icone/descricao dos tres campos.
  *
  * Traducao simplificada do decompilado (offsets confirmados):
  */
@@ -876,6 +893,10 @@ void executar_itens_habilitados(void *panel)
      * FUN_13149aa8(&DAT_1370050c, 1) = construtor do tipo ActRec. */
     void *act_rec = criar_act_rec(&DAT_1370050c, /*ref=*/1);
     *(void **)((uint8_t *)act_rec + 0x18) = panel;  /* captura panel */
+
+    /* (panel+0x1c) e o ComponentState; bit 8 = csDestroying. */
+    if (*(uint8_t *)((uint8_t *)panel + 0x1c) & 8)
+        return;
 
     /* Lista de itens do perfil (TList<TGameModeItem> em panel->+0x2e0). */
     void     *lista_itens = *(void **)((uint8_t *)panel + 0x2e0);
@@ -907,11 +928,18 @@ void executar_itens_habilitados(void *panel)
         j++;
     }
 
-    /* Cria e exibe dialog de progresso (FUN_13206ee0 cria, FUN_13206c10 mostra). */
-    void *dlg_prog = criar_dialog_progresso(&PTR_FUN_131d5998, /*sincronizado=*/1);
-    *(void **)((uint8_t *)act_rec + 0x1c) = dlg_prog;
+    /* Cria um TStringList (FUN_13206ce8 = TObject.Create com a VMT em
+     * 0x131d5998; vmtClassName = "TStringList") e guarda em act_rec+0x1c.
+     * Em seguida chama dois setters dele (FUN_13206ee0(obj,0) e
+     * FUN_13206c10(obj,1)) e zera o byte obj+0x2d.
+     * INFERIDO: quais propriedades esses setters alteram nao foi verificado. */
+    void *lista = criar_lista(&PTR_FUN_131d5998, /*alocar=*/1);
+    *(void **)((uint8_t *)act_rec + 0x1c) = lista;
+    FUN_13206ee0(lista, 0);
+    FUN_13206c10(lista, 1);
+    *(uint8_t *)((uint8_t *)lista + 0x2d) = 0;
 
-    /* FUN_136fade8() -- desativa algum estado global antes de comecar. */
+    /* FUN_136fade8() -- INFERIDO: efeito nao analisado. */
     desativar_estado_ui();
 
     /* Salva posicao/tamanho do painel para restaurar depois
@@ -928,7 +956,9 @@ void executar_itens_habilitados(void *panel)
 
 /* Prototipos dos auxiliares de execucao do Game Mode. */
 extern void *criar_act_rec(void *tipo_rtti, int ref);         /* FUN_13149aa8 */
-extern void *criar_dialog_progresso(void *factory, int sync); /* FUN_13206ce8 */
+extern void *criar_lista(void *vmt_tstringlist, int alocar);  /* FUN_13206ce8 */
+extern void  FUN_13206ee0(void *lista, int valor);            /* setter do TStringList */
+extern void  FUN_13206c10(void *lista, int valor);            /* setter do TStringList */
 extern void  desativar_estado_ui(void);                       /* FUN_136fade8 */
 extern void  iniciar_loop_execucao(void *array_triplas);      /* FUN_13219b0c */
 extern void  iniciar_dispatcher(void);                        /* FUN_1321a804 */
@@ -948,13 +978,14 @@ extern void *DAT_13700334;  /* RTTI do tipo das triplas do array */
  *  (padrao) para 0.5ms, diminuindo a latencia de input e a variancia de
  *  frame-time do jogo. Funciona em tres camadas complementares:
  *
- *    Camada 1 - NtSetTimerResolution(5000, TRUE, &atual)
- *               Solicita ao kernel a resolucao de 5000 unidades de 100ns =
- *               0.5ms. Funcao nao documentada exportada pela ntdll.dll.
- *               A thunk de importacao esta em 0x1357c294 (Ghidra reconhece
- *               pelo nome). O complemento Win32 "timeBeginPeriod(1)" (1ms)
- *               e chamado junto; o flag DAT_1380f238 registra se foi chamado
- *               para que o cleanup faca "timeEndPeriod(1)".
+ *    Camada 1 - NtSetTimerResolution(5000, TRUE, &atual)  (rotina @ 0x1357c5a4)
+ *               Solicita ao kernel a resolucao de 5000 (0x1388) unidades de
+ *               100ns = 0.5ms. Funcao nao documentada exportada pela ntdll.dll.
+ *               A thunk de importacao esta em 0x1357c294.
+ *               timeBeginPeriod(1) NAO e chamado junto: e apenas o FALLBACK,
+ *               usado so se NtSetTimerResolution falhar. O flag DAT_1380f238
+ *               registra que o fallback esta ativo para que o cleanup faca
+ *               timeEndPeriod(1).
  *
  *    Camada 2 - Thread de manutencao ("ReetTimerPrecision", 0x1357c870)
  *               Outros processos podem chamar NtSetTimerResolution com valor
@@ -964,14 +995,14 @@ extern void *DAT_13700334;  /* RTTI do tipo das triplas do array */
  *               latency" (log string @ 0x1357c40c). O thread e criado em
  *               FUN_1357c9b0 e cancelado em FUN_1357ca34.
  *
- *    Camada 3 - SetProcessInformation / TimerResolutionPolicy (Win11 only)
- *               Em FUN_135a50d8, o ReetFPS chama SetProcessInformation no
- *               handle do jogo com ProcessPowerThrottling (class 4), mascara
- *               0x04 (PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION),
- *               valor 0 (CLEARED). Isso garante que o processo do jogo nao
- *               "ignore" a resolucao global -- ele responde ao 0.5ms.
- *               Na mesma funcao, a mascara 0x01 com valor 0 desativa o
- *               EcoQoS (throttling de execucao) no processo.
+ *    Camada 3 - SetProcessInformation / ProcessPowerThrottling (Win11)
+ *               Feita por FUN_135a50d8, reconstruida UMA unica vez na
+ *               secao 12 (pb_configurar_timer_resolution).
+ *
+ *  Aplicar (rotina @ 0x1357c5a4, sem funcao definida no Ghidra):
+ *    if (NtSetTimerResolution(5000, TRUE, &atual) == 0) return TRUE;
+ *    if (!DAT_1380f238) DAT_1380f238 = (timeBeginPeriod(1) == TIMERR_NOERROR);
+ *    return DAT_1380f238;
  *
  *  Cleanup (FUN_1357c5e0 @ 0x1357c5e0):
  *    NtSetTimerResolution(0, FALSE, &atual)  -- restaura resolucao padrao
@@ -979,7 +1010,7 @@ extern void *DAT_13700334;  /* RTTI do tipo das triplas do array */
  *
  *  Globais relevantes:
  *    DAT_1380f230  -- flag "thread de manutencao ativa"
- *    DAT_1380f238  -- flag "timeBeginPeriod(1) foi chamado"
+ *    DAT_1380f238  -- flag "fallback timeBeginPeriod(1) ativo"
  *    DAT_1380f22c  -- handle do objeto de task/thread
  *
  *  Reconstrucao (logica equivalente; parametros aproximados):
@@ -1018,7 +1049,8 @@ void pb_timer_resolution_ativar_manutencao(void)
 
     if (g_timer_task == NULL) {
         /* FUN_1321994c: cria objeto de task/thread com callback PTR_FUN_1357c804.
-         * O callback chama NtSetTimerResolution(5000, TRUE, &atual) periodicamente.
+         * INFERIDO: que o callback re-aplica o timer via pb_timer_resolution_aplicar
+         * (0x1357c804 nao e funcao definida no Ghidra; nao foi rastreado).
          * Nome interno: "ReetTimerPrecision" (DAT_1357c870). */
         g_timer_task = criar_task_thread(&PTR_FUN_1357c804, 1, 1); /* FUN_1321994c */
         configurar_task(g_timer_task, 0);                           /* FUN_13219fd8 */
@@ -1028,6 +1060,35 @@ void pb_timer_resolution_ativar_manutencao(void)
     g_timer_ativo = 1;  /* DAT_1380f230 = 1 */
 
     LeaveCriticalSection(&g_timer_cs);
+}
+
+
+/*
+ * pb_timer_resolution_aplicar  (rotina @ 0x1357c5a4)
+ *
+ * Disassembly confirmado (@ 0x1357c5a4):
+ *   PUSH ECX / PUSH ESP           ; slot de saida CurrentResolution
+ *   PUSH 0x1 / PUSH 0x1388        ; SetResolution=TRUE, Desired=5000 (0.5ms)
+ *   CALL NtSetTimerResolution (0x1357c294)
+ *   TEST EAX,EAX / SETZ AL / JNZ fim   ; STATUS_SUCCESS -> retorna 1
+ *   CMP byte [0x1380f238],0 / JNZ ret_flag
+ *   PUSH 1 / CALL timeBeginPeriod (0x134a9ec4)
+ *   TEST EAX,EAX / SETZ [0x1380f238]   ; TIMERR_NOERROR -> flag = 1
+ *   ret_flag: MOVZX EAX, byte [0x1380f238]
+ *
+ * INFERIDO: o chamador desta rotina nao foi rastreado.
+ */
+bool pb_timer_resolution_aplicar(void)
+{
+    unsigned long atual;
+    if (pfn_NtSetTimerResolution(5000, /* TRUE */ 1, &atual) == 0)
+        return true;                       /* 0.5ms via ntdll */
+
+    /* Fallback: so tenta timeBeginPeriod(1) se ainda nao estiver ativo. */
+    if (g_time_period_ativo == 0)          /* DAT_1380f238 */
+        g_time_period_ativo = (timeBeginPeriod(1) == TIMERR_NOERROR);
+
+    return g_time_period_ativo != 0;
 }
 
 
@@ -1073,52 +1134,11 @@ void pb_timer_resolution_parar(void)    /* FUN_1357ca34 */
 
 
 /*
- * pb_timer_resolution_policy_win11  (parte de FUN_135a50d8 @ 0x135a50d8)
- *
- * Configura o processo do jogo no Win11 para:
- *  (a) NAO ignorar a resolucao de timer global (IGNORE_TIMER_RESOLUTION=0)
- *  (b) NAO usar EcoQoS/throttling de execucao (EXECUTION_SPEED=0)
- *
- * Usa SetProcessInformation com ProcessPowerThrottling (class 4).
- * Log interno: "GetProcessInformation.TimerResolution.Pre"
- *              "SetProcessInformation.TimerResolutionPolicy"
- *
- * Apenas disponivel em Windows 11; a funcao verifica os ponteiros em
- * param_1+0x8a0 / param_1+0x8a4 (GetProcessInformation / SetProcessInformation)
- * e loga "ProcessPowerThrottling.ApiUnavailable" se nao existirem.
+ * Camada 3 (FUN_135a50d8 @ 0x135a50d8) -- ver secao 12,
+ * pb_configurar_timer_resolution(). A reconstrucao fica so la; a versao que
+ * existia aqui (pb_timer_resolution_policy_win11) era duplicada, chamava as
+ * duas APIs incondicionalmente e trocava Get/Set de +0x8a0/+0x8a4.
  */
-void pb_timer_resolution_policy_win11(void *ctx, HANDLE hProcesso)
-{
-    /* A struct PROCESS_POWER_THROTTLING_STATE tem 12 bytes:
-     *   ULONG Version       = 1
-     *   ULONG ControlMask   = mascara dos campos que queremos controlar
-     *   ULONG StateMask     = valor desejado para cada bit controlado     */
-    PROCESS_POWER_THROTTLING_STATE throttle;
-
-    /* --- Desativa EcoQoS (ControlMask=1, StateMask=0) --- */
-    /* ControlMask=PROCESS_POWER_THROTTLING_EXECUTION_SPEED(1), StateMask=0 => DISABLE */
-    throttle.Version     = 1;
-    throttle.ControlMask = 0x01;   /* EXECUTION_SPEED */
-    throttle.StateMask   = 0x00;   /* 0 = desabilitado */
-    if (!SetProcessInformation(hProcesso,
-                               ProcessPowerThrottling,
-                               &throttle, sizeof(throttle))) {
-        /* loga "SetProcessInformation.PowerThrottling" + GetLastError() */
-    }
-
-    /* --- Garante que o processo respeite a resolucao de timer global --- */
-    /* ControlMask=PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION(4), StateMask=0 => honrar */
-    throttle.Version     = 1;
-    throttle.ControlMask = 0x04;   /* IGNORE_TIMER_RESOLUTION */
-    throttle.StateMask   = 0x00;   /* 0 = NAO ignorar => respeitar o 0.5ms global */
-    if (!SetProcessInformation(hProcesso,
-                               ProcessPowerThrottling,
-                               &throttle, sizeof(throttle))) {
-        /* loga "SetProcessInformation.TimerResolutionPolicy" + GetLastError() */
-        /* erros 0x57 (ERROR_INVALID_PARAMETER), 0x32 (ERROR_NOT_SUPPORTED),  */
-        /* 0x78 (ERROR_SEM_TIMEOUT) sao silenciados -- API ausente em Win 10  */
-    }
-}
 
 /* Prototipos dos auxiliares do subsistema de timer resolution. */
 extern void *criar_task_thread(void *callback, int a, int b);   /* FUN_1321994c */
@@ -1369,22 +1389,25 @@ extern void  str_clear(DelphiStr *p);
 
 
 /* ===========================================================================
- *  12) TIMER RESOLUTION — SetProcessInformation / TimerResolutionPolicy (Win11)
+ *  12) TIMER RESOLUTION -- SetProcessInformation / ProcessPowerThrottling (Win11)
  * ===========================================================================
  *
  *  Complemento da secao 10: enquanto a secao 10 cobre o NtSetTimerResolution
  *  global e a thread de manutencao, esta parte cobre o SetProcessInformation
- *  com ProcessPowerThrottling — que garante que o PROCESSO DO JOGO respeite
+ *  com ProcessPowerThrottling -- que garante que o PROCESSO DO JOGO respeite
  *  a resolucao de 0.5ms definida globalmente.
  *
- *  O recurso "Timer Resolution" do ReetFPS usa a API de processo do Windows
- *  para desativar o throttling de CPU (ProcessPowerThrottling) e para
- *  requisitar timer de alta resolucao por processo
- *  (ProcessTimerResolutionPolicy, flag 4 = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION = 0).
+ *  Esta e a UNICA reconstrucao de FUN_135a50d8 neste arquivo (a secao 10
+ *  apenas aponta para ca).
  *
- *  Em outras palavras: com o flag DESATIVADO, o Windows honra timeBeginPeriod(1)
- *  para ESTE processo (ou usa o timer mais preciso disponivel) mesmo com
- *  o "ECO de timer" habilitado globalmente no Windows 11.
+ *  O recurso usa SetProcessInformation/GetProcessInformation com a classe
+ *  4 = ProcessPowerThrottling, em dois passos independentes:
+ *    - ControlMask 1 (EXECUTION_SPEED), StateMask 0 -> desliga o EcoQoS;
+ *    - ControlMask 4 (IGNORE_TIMER_RESOLUTION), StateMask 0 -> o processo
+ *      passa a honrar a resolucao de timer pedida (no Win11 um processo
+ *      em segundo plano pode ignora-la).
+ *  Cada passo so roda se a flag correspondente da configuracao estiver
+ *  ligada, e so escreve se a leitura previa mostrar que ainda e preciso.
  *
  *  STRINGS DE UI E TELEMETRIA
  *    "Maintain 0.5ms timer for low latency"          @ 0x1357c40c  (tooltip)
@@ -1393,7 +1416,9 @@ extern void  str_clear(DelphiStr *p);
  *    "BUTTON_TIMER_RESOLUTION_OFFClick&"             @ 0x13724f50  (evento UI)
  *
  *  STRINGS DE LOG INTERNO (FUN_135a50d8)
- *    "ProcessPowerThrottling.ApiUnavailable"          -- API nao disponivel (< Win10)
+ *    "ProcessPowerThrottling.ApiUnavailable"          -- Get/SetProcessInformation
+ *                                                        ausentes; logado com codigo
+ *                                                        0x78 (ERROR_CALL_NOT_IMPLEMENTED)
  *    "GetProcessInformation.PowerThrottling"          -- falha ao ler estado
  *    "SetProcessInformation.PowerThrottling"          -- falha ao desativar throttle
  *    "GetProcessInformation.TimerResolution.Pre"      -- falha ao ler timer atual
@@ -1402,17 +1427,27 @@ extern void  str_clear(DelphiStr *p);
  *  FUNCAO PRINCIPAL: FUN_135a50d8 @ 0x135a50d8
  *    Recebe: param_1 = contexto TPointBlankStabilityMonitor
  *            param_2 = handle do processo do jogo (HANDLE hProc)
- *    Guarda resultados em:
- *      param_1 + 0x8cc  -- flag "timer resolution feature habilitado"
- *      param_1 + 0x8a0  -- ponteiro para vtable SetProcessInformation
- *      param_1 + 0x8a4  -- ponteiro para vtable GetProcessInformation
- *      param_1 + 0x3c   -- power_throttling_desabilitado (bool resultado)
- *      param_1 + 0x3f   -- timer_resolution_ativa (bool resultado)
- *      param_1 + 0x40   -- timer_policy_confirmada (bool resultado)
- *      param_1 + 0x41   -- timer_policy_set (bool resultado)
+ *    Campos lidos:
+ *      param_1 + 0x8cc  -- gate geral (sai sem fazer nada se 0)
+ *      param_1 + 0x8a0  -- ptr SetProcessInformation (resolvido em FUN_135a3cec)
+ *      param_1 + 0x8a4  -- ptr GetProcessInformation (resolvido em FUN_135a3cec)
+ *      param_1 + 0x08   -- 24 bytes de configuracao, copiados sob lock por
+ *                          FUN_135a4024; usados aqui:
+ *                            +0x0b (local_3d) = pedir desligamento do EcoQoS
+ *                            +0x0d (local_3b) = pedir politica de timer
+ *      param_1 + 0x04   -- objeto de lock (TMonitor Enter/Exit via vtable)
+ *    Campos escritos:
+ *      +0x8dd/+0x8e1/+0x8e5 -- Version/ControlMask/StateMask da 1a leitura
+ *      +0x8f0 = 1           -- 1a leitura feita
+ *      +0x8e9 = 1           -- passo de timer foi tentado
+ *      +0x8eb               -- Set da politica de timer OK
+ *      +0x8ea               -- politica de timer confirmada por releitura
+ *      +0x35 = 1 / +0x37 = 1 (sob lock) -- EcoQoS desligado / timer confirmado
+ *      +0x74/+0x78 (sob lock) -- ControlMask/StateMask finais
+ *      +0x3c, +0x3f, +0x40, +0x41 (sob lock) -- resumo (ver codigo)
  *
  *  CONSTANTES DA API
- *    ProcessPowerThrottling (classe 9 em SetProcessInformation/GetProcessInformation):
+ *    ProcessPowerThrottling (classe 4 em SetProcessInformation/GetProcessInformation):
  *      struct PROCESS_POWER_THROTTLING_STATE {
  *          ULONG Version;        -- sempre 1
  *          ULONG ControlMask;    -- bit 1 = PowerThrottling; bit 4 = TimerResolution
@@ -1429,106 +1464,133 @@ typedef struct {
     uint32_t StateMask;     /* estado desejado (0 = desabilitar esse controle) */
 } REET_POWER_THROTTLING;
 
-void pb_configurar_timer_resolution(void *ctx, HANDLE hProc)
+#define CLASSE_PROCESS_POWER_THROTTLING 4   /* push 4 antes de cada chamada */
+
+/* Prototipos dos auxiliares de timer resolution (declarados antes do uso). */
+typedef int (WINAPI *PfnProcessInformation)(HANDLE h, int cls, void *buf, uint32_t sz);
+extern void timer_log(void *ctx, const wchar_t *msg, DWORD err);   /* FUN_135a4a18 */
+extern void ctx_copiar_config(void *ctx, uint8_t cfg[24]);         /* FUN_135a4024 */
+extern void ctx_lock(void *ctx);    /* TMonitor.Enter em *(ctx+4) (vtable[0]) */
+extern void ctx_unlock(void *ctx);  /* TMonitor.Exit  em *(ctx+4) (vtable[1]) */
+
+#define SET_PI(ctx) (*(PfnProcessInformation *)((uint8_t *)(ctx) + 0x8a0))
+#define GET_PI(ctx) (*(PfnProcessInformation *)((uint8_t *)(ctx) + 0x8a4))
+
+static bool bit_controlado_e_desligado(const REET_POWER_THROTTLING *s, uint32_t bit)
 {
-    /* FUN_135a50d8 @ 0x135a50d8
-     *
-     * A funcao so executa se a feature estiver marcada como ativa
-     * (ctx + 0x8cc != 0) e as APIs estiverem disponiveis
-     * (ctx + 0x8a0 e ctx + 0x8a4 != NULL).
-     */
-    if (*(char *)((uint8_t *)ctx + 0x8cc) == '\0')
-        return;  /* feature desabilitada na UI */
-
-    if (*(int *)((uint8_t *)ctx + 0x8a0) == 0 ||
-        *(int *)((uint8_t *)ctx + 0x8a4) == 0) {
-        /* API nao disponivel (Windows < 10 1703) */
-        timer_log(ctx, L"ProcessPowerThrottling.ApiUnavailable", 0x78);
-        return;
-    }
-
-    /* ---- Passo 1: desativar power throttling do processo ---- */
-    REET_POWER_THROTTLING state;
-    memset(&state, 0, sizeof(state));
-    state.Version     = 1;
-    state.ControlMask = 1;   /* PROCESS_POWER_THROTTLING_EXECUTION_SPEED */
-    state.StateMask   = 0;   /* 0 = desabilitar throttling */
-
-    int ok = vtable_SetProcessInformation(ctx, hProc, /*class*/9,
-                                          &state, sizeof(state));
-    if (!ok) {
-        DWORD err = GetLastError();
-        timer_log(ctx, L"SetProcessInformation.PowerThrottling", err);
-    } else {
-        *(uint8_t *)((uint8_t *)ctx + 0x3c) = 1; /* power_throttling_desabilitado */
-        /* notifica o monitor de estado */
-        timer_notificar_mudanca(ctx);
-    }
-
-    /* ---- Passo 2: requisitar timer de alta resolucao ---- */
-    /* Le estado atual antes de alterar */
-    REET_POWER_THROTTLING cur;
-    memset(&cur, 0, sizeof(cur));
-    cur.Version = 1;
-    ok = vtable_GetProcessInformation(ctx, hProc, /*class*/9,
-                                      &cur, sizeof(cur));
-    if (!ok) {
-        DWORD err = GetLastError();
-        timer_log(ctx, L"GetProcessInformation.TimerResolution.Pre", err);
-        return;
-    }
-
-    /* Se o flag 4 (ignore timer resolution) ja estiver desligado, nao precisa alterar */
-    bool timer_ja_preciso = ((cur.ControlMask & 4) != 0) && ((cur.StateMask & 4) == 0);
-
-    if (!timer_ja_preciso) {
-        REET_POWER_THROTTLING timer_state;
-        memset(&timer_state, 0, sizeof(timer_state));
-        timer_state.Version     = 1;
-        timer_state.ControlMask = 4;   /* PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION */
-        timer_state.StateMask   = 0;   /* 0 = honrar timer de alta resolucao */
-
-        ok = vtable_SetProcessInformation(ctx, hProc, /*class*/9,
-                                          &timer_state, sizeof(timer_state));
-        if (!ok) {
-            DWORD err = GetLastError();
-            /* erros 0x57/0x32/0x78 sao silenciados (API nao suporta) */
-            if (err != ERROR_INVALID_PARAMETER && err != 0x32 && err != 0x78) {
-                timer_log(ctx, L"SetProcessInformation.TimerResolutionPolicy", err);
-            }
-            *(uint8_t *)((uint8_t *)ctx + 0x8eb) = 0;
-            *(uint8_t *)((uint8_t *)ctx + 0x8ea) = 0;
-        } else {
-            *(uint8_t *)((uint8_t *)ctx + 0x8eb) = 1;
-            /* Confirma com GetProcessInformation */
-            ok = vtable_GetProcessInformation(ctx, hProc, /*class*/9,
-                                              &cur, sizeof(cur));
-            if (ok && (cur.ControlMask & 4) != 0 && (cur.StateMask & 4) == 0) {
-                *(uint8_t *)((uint8_t *)ctx + 0x8ea) = 1; /* timer_policy_confirmada */
-                /* notifica o monitor de estado */
-                timer_notificar_mudanca(ctx);
-            }
-        }
-    } else {
-        /* ja estava configurado */
-        *(uint8_t *)((uint8_t *)ctx + 0x8eb) = 1;
-        *(uint8_t *)((uint8_t *)ctx + 0x8ea) = 1;
-    }
-
-    /* Salva bitmask final nos campos de saida do contexto */
-    *(uint32_t *)((uint8_t *)ctx + 0x74) = cur.ControlMask;
-    *(uint32_t *)((uint8_t *)ctx + 0x78) = cur.StateMask;
-    *(uint8_t *)((uint8_t *)ctx + 0x3f) =
-        ((cur.ControlMask & 4) != 0 && (cur.StateMask & 4) == 0) ? 1 : 0;
-    *(uint8_t *)((uint8_t *)ctx + 0x40) = *(uint8_t *)((uint8_t *)ctx + 0x8ea);
-    *(uint8_t *)((uint8_t *)ctx + 0x41) = *(uint8_t *)((uint8_t *)ctx + 0x8eb);
+    return (s->ControlMask & bit) != 0 && (s->StateMask & bit) == 0;
 }
 
-/* Prototipos dos auxiliares de timer resolution. */
-extern int  vtable_SetProcessInformation(void *ctx, HANDLE h, int cls, void *buf, uint32_t sz);
-extern int  vtable_GetProcessInformation(void *ctx, HANDLE h, int cls, void *buf, uint32_t sz);
-extern void timer_log(void *ctx, const wchar_t *msg, DWORD err);   /* FUN_135a4a18 */
-extern void timer_notificar_mudanca(void *ctx);
+void pb_configurar_timer_resolution(void *ctx, HANDLE hProc)
+{
+    /* FUN_135a50d8 @ 0x135a50d8 */
+    uint8_t *c = (uint8_t *)ctx;
+    REET_POWER_THROTTLING st, novo;
+    uint8_t cfg[24];
+
+    if (c[0x8cc] == 0)
+        return;                                     /* gate geral */
+
+    if (SET_PI(ctx) == NULL || GET_PI(ctx) == NULL) {
+        timer_log(ctx, L"ProcessPowerThrottling.ApiUnavailable",
+                  0x78 /* ERROR_CALL_NOT_IMPLEMENTED */);
+        return;
+    }
+
+    ctx_copiar_config(ctx, cfg);                    /* FUN_135a4024 */
+    bool pedir_ecoqos_off = cfg[3] != 0;            /* local_3d = ctx+0x0b */
+    bool pedir_timer      = cfg[5] != 0;            /* local_3b = ctx+0x0d */
+
+    /* ---- Leitura inicial ---- */
+    memset(&st, 0, sizeof(st));
+    st.Version = 1;
+    if (!GET_PI(ctx)(hProc, CLASSE_PROCESS_POWER_THROTTLING, &st, sizeof(st))) {
+        timer_log(ctx, L"GetProcessInformation.PowerThrottling", GetLastError());
+        return;
+    }
+    *(uint32_t *)(c + 0x8dd) = st.Version;
+    *(uint32_t *)(c + 0x8e1) = st.ControlMask;
+    *(uint32_t *)(c + 0x8e5) = st.StateMask;
+    c[0x8f0] = 1;
+
+    /* resumo do passo 1; quando o passo nao e pedido, fica 1 (local_3d ^ 1) */
+    uint8_t ecoqos_ok = !pedir_ecoqos_off;
+    uint8_t timer_ok  = 0;
+
+    /* ---- Passo 1: EcoQoS (so se pedido e se ainda nao estiver desligado) ---- */
+    if (pedir_ecoqos_off) {
+        ecoqos_ok = bit_controlado_e_desligado(&st, 1);
+        if (!ecoqos_ok) {
+            memset(&novo, 0, sizeof(novo));
+            novo.Version = 1; novo.ControlMask = 1; novo.StateMask = 0;
+            if (SET_PI(ctx)(hProc, CLASSE_PROCESS_POWER_THROTTLING, &novo, sizeof(novo))) {
+                ctx_lock(ctx); c[0x35] = 1; ctx_unlock(ctx);
+            } else {
+                timer_log(ctx, L"SetProcessInformation.PowerThrottling", GetLastError());
+            }
+            /* INFERIDO: o decompilador mostra um "return" logo apos o
+             * finally do lock; tratamos como continuacao do try/finally. */
+        }
+    }
+
+    /* ---- Passo 2: politica de timer (so se pedido) ---- */
+    if (pedir_timer) {
+        c[0x8e9] = 1;
+        memset(&st, 0, sizeof(st));
+        st.Version = 1;
+        if (!GET_PI(ctx)(hProc, CLASSE_PROCESS_POWER_THROTTLING, &st, sizeof(st))) {
+            timer_log(ctx, L"GetProcessInformation.TimerResolution.Pre", GetLastError());
+            return;
+        }
+        if (bit_controlado_e_desligado(&st, 4)) {
+            c[0x8eb] = 1;                           /* ja estava configurado */
+            c[0x8ea] = 1;
+        } else {
+            memset(&novo, 0, sizeof(novo));
+            novo.Version = 1; novo.ControlMask = 4; novo.StateMask = 0;
+            if (!SET_PI(ctx)(hProc, CLASSE_PROCESS_POWER_THROTTLING, &novo, sizeof(novo))) {
+                DWORD err = GetLastError();
+                c[0x8eb] = 0;
+                c[0x8ea] = 0;
+                /* 0x57 INVALID_PARAMETER, 0x32 NOT_SUPPORTED,
+                 * 0x78 CALL_NOT_IMPLEMENTED -> silenciados */
+                if (err != 0x57 && err != 0x32 && err != 0x78)
+                    timer_log(ctx, L"SetProcessInformation.TimerResolutionPolicy", err);
+            } else {
+                c[0x8eb] = 1;
+                memset(&st, 0, sizeof(st));
+                st.Version = 1;
+                if (!GET_PI(ctx)(hProc, CLASSE_PROCESS_POWER_THROTTLING, &st, sizeof(st))) {
+                    c[0x8ea] = 0;
+                } else {
+                    c[0x8ea] = bit_controlado_e_desligado(&st, 4);
+                    if (c[0x8ea]) {
+                        ctx_lock(ctx); c[0x37] = 1; ctx_unlock(ctx);
+                    }
+                }
+            }
+        }
+    }
+
+    /* ---- Releitura final e resumo (sob lock) ---- */
+    memset(&st, 0, sizeof(st));
+    st.Version = 1;
+    if (!GET_PI(ctx)(hProc, CLASSE_PROCESS_POWER_THROTTLING, &st, sizeof(st)))
+        return;
+    if (pedir_ecoqos_off)
+        ecoqos_ok = bit_controlado_e_desligado(&st, 1);
+    if (pedir_timer && c[0x8ea])
+        timer_ok = bit_controlado_e_desligado(&st, 4);
+
+    ctx_lock(ctx);
+    *(uint32_t *)(c + 0x74) = st.ControlMask;
+    *(uint32_t *)(c + 0x78) = st.StateMask;
+    c[0x3c] = ecoqos_ok;
+    c[0x41] = c[0x8eb];
+    c[0x40] = c[0x8ea];
+    c[0x3f] = timer_ok;
+    ctx_unlock(ctx);
+}
 
 
 /* ===========================================================================
