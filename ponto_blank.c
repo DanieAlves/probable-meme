@@ -749,10 +749,29 @@ extern void  exibir_aviso_crash(DelphiStr msg_botao,
  *  Obs.: "fullscreen" e "smart" sao ICONES, nao chaves (a versao anterior
  *  desta secao os tratava como chaves e escrevia "OTIMIZER_PB_MANAGER").
  *
+ *  DESPACHANTE DAS CHAVES DO GRUPO PointBlank (rotina @ 0x136f78d0, sem
+ *  funcao definida no Ghidra). Se o form global *(PTR_DAT_13810970) for nulo
+ *  levanta excecao (mensagem @ 0x136f7a98). Depois compara a chave (ECX) com
+ *  cada string via FUN_1316c388 e, no primeiro acerto, chama
+ *  FUN_136f782c(handler, form):
+ *    chave (string comparada)                    handler
+ *    ------------------------------------------  ----------
+ *    "FLUIDEZMAX" @0x136f7ae0 ou
+ *    "FLUIDEZMAXIMA" @0x136f7b04                  0x1372a03c
+ *    "FULLSCREEN" @0x136f7b2c                     0x1372dfb0
+ *    "OPTIMIZER_PB_MANAGER" @0x136f7b50           0x13729094
+ *    "FPS_SELECTION_INDEX" @0x136f7b88            0x137294d8
+ *    "PRIORITYPB" @0x136f7bbc                     0x1372e888
+ *    "LOADINGMAP" @0x136f7be0                     0x13728d20
+ *    "INTERFACE" @0x136f7c04                      0x1372d4b8
+ *    "REETGAMEMODE" @0x136f7c24                   0x1372c00c
+ *  Obs.: OPTIMIZER_PB_MANAGER vai para 0x13729094; FUN_13600598 e outra
+ *  rotina (reparo do sistema), nao este item.
+ *  INFERIDO: o corpo de cada handler nao foi analisado nesta secao.
+ *
  *  INFERIDO: nao foi comprovado que este array em (form+0x340) seja a mesma
  *  lista (form+0x2e0) que FUN_137008d0 executa -- os offsets sao diferentes.
- *  Tambem nao foi rastreado o que cada chave executa; as descricoes acima sao
- *  so os textos da UI. Afirmacoes antigas desta secao (OPTIMIZER_PB_MANAGER
+ *  As descricoes da tabela acima sao so os textos da UI. Afirmacoes antigas desta secao (OPTIMIZER_PB_MANAGER
  *  ativa o TPointBlankStabilityMonitor; FPS_SELECTION_INDEX le
  *  [Graphics] FPSType/FPSVal do INI; REETGAMEMODE liga o Windows Game Mode)
  *  NAO foram verificadas no binario e foram retiradas.
