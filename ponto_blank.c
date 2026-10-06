@@ -2273,292 +2273,329 @@ void pb_interface_transparencia_religar(uint8_t *painel)
 
 
 /* ===========================================================================
- *  17) FPS ILIMITADO  (TRPFpsLimit / TURBINAR FPS)
+ *  17) FPS ILIMITADO  (formulario TUNLOCK_FPS / controle TRPFpsLimit)
  * ===========================================================================
  *
- *  Classe original: TRPFpsLimit
- *      RTTI @ 0x13691621  ("TRPFpsLimit6")
- *      Construtor       : FUN_13691854 @ 0x13691854
- *      Titulo interno   : "TURBINAR FPS" @ 0x136918f0
+ *  O que o binario mostra: e uma TELA de escolha de preset de FPS (1..6).
+ *  O indice escolhido vai para os controles da interface e para o JSON de
+ *  configuracoes do ReetFPS. Nenhuma funcao desta cadeia escreve no processo
+ *  do jogo nem no registro.
  *
- *  O perfil "TURBINAR FPS" tem dois modos seleccionaveis pelo usuario:
+ *  FORMULARIO: TUNLOCK_FPS  (RTTI: nome da classe @ 0x13693538,
+ *              nome da unit "UNLOCKEDFPS" @ 0x1369372c)
+ *    "UNLOCKEDFPS" NAO e um valor gravado: e o nome da unit Delphi do form.
+ *    Metodos publicados (tabela RTTI logo apos 0x13693538):
+ *      INC_FPS_VALUEClick  @ 0x136940f8  idx = (idx < 6) ? idx + 1 : 1
+ *      DEC_FPS_VALUEClick  @ 0x13694118  idx = (idx > 1) ? idx - 1 : 1
+ *      FormCreate          @ 0x13694138  vazio (so RET)
+ *      FormShow            @ 0x1369413c  inicializa o form (escala/estado)
+ *      Image3Click         @ 0x136941cc  aplica (FUN_1369407c) e chama
+ *                                        FUN_13358248(self) (INFERIDO: Close)
+ *      RPFpsLimit1Change   @ 0x136941e4  (Sender, Index) -> pre-visualiza
+ *      RPFpsLimit1Apply    @ 0x136941ec  chama Image3Click
+ *    O controle TRPFpsLimit fica em form+0x448 (titulo "TURBINAR FPS"
+ *    @ 0x136918f0). "SEM LIMITE" @ 0x13692714 e "LIMITE DE FPS" @ 0x13692738
+ *    sao textos desenhados por esse controle; a regra que escolhe entre eles
+ *    nao foi rastreada.
  *
- *    SEM LIMITE   (indice 10) @ 0x13692714
- *        Remove qualquer teto de FPS dentro do Point Blank: envia ao jogo
- *        o valor maximo reservado ("FPS 486", string estatica @ 0x13687df8),
- *        permitindo que o motor rode sem restricao. A chave de estado e
- *        gravada como a string literal "UNLOCKEDFPS".
+ *  ESTADO
+ *    _DAT_1380f72c  indice de preset atual (1..6)
+ *    _DAT_1380f728  copia do indice enviada ao controle TRPFpsLimit
+ *    DAT_13819b44   instancia do form TUNLOCK_FPS (0 se fechado)
  *
- *    LIMITE DE FPS (indice 11) @ 0x13692738
- *        O usuario escolhe um dos 6 presets de frequencia. O preset
- *        escolhido e persistido numericamente em FPS_SELECTION_INDEX.
+ *  PERSISTENCIA: chave "FPS_SELECTION_INDEX" @ 0x13694054 no JSON de
+ *  configuracoes (FUN_1369b158 -- ver abaixo). Nao e registro direto nem o
+ *  INI do jogo. Como o JSON chega ao disco nao foi rastreado aqui.
  *
- *  Estado persistido (registry HKCU):
- *      Chave  : "Keyboard Layout\ReetFPS"  (padrao de todo o ReetFPS)
- *      Valor  : "FPS_SELECTION_INDEX"  @ 0x136937e8 / 0x13694054
- *                 "UNLOCKEDFPS"  -> modo SEM LIMITE  (@ 0x13693728)
- *                  "1" .. "6"   -> preset especifico, modo LIMITE DE FPS
+ *  ITEM DE RECOMENDACAO: "FPS_SELECTION_INDEX" ("FPS recomendado") na lista
+ *  de FUN_136ec13c (ver §9/§18). O despachante FUN_136f78d0 liga essa chave
+ *  a FUN_137294d8, que troca os botoes +0x478/+0x474 do form principal e
+ *  chama vtable+0x1cc do objeto em PTR_DAT_13811880 (INFERIDO: exibe este
+ *  formulario). Sem o jogo aberto chama FUN_135fcd18.
  *
- *  Itens de perfil usados: Energia_ON, Hibernate_ON
- *      (reduzem latencia do subsistema de energia antes de aplicar FPS)
+ *  LEITURA NO INICIO: FUN_13693750 @ 0x13693750 le "FPS_SELECTION_INDEX"
+ *  (@ 0x136937e8) do JSON (FUN_1369b8f4), faz Trim (FUN_1316c638) e
+ *  TryStrToInt (FUN_1316d204); se nao houver valor, usa 3.
  *
- *  Cadeia de aplicacao (modo LIMITE DE FPS, FUN_1369407c @ 0x1369407c):
- *
- *    pb_fps_definir_preset(index)          // entry point, FUN_1369407c
- *      ↓
- *    FUN_13693740(index)                   // clamp: se index < 1 ou > 6 → 3
- *      ↓
- *    FUN_13693d44()                        // verifica se o jogo esta rodando
- *      ↓                                  // (PTR_DAT_13811928 / PTR_DAT_13810cd8)
- *    FUN_132db2e0(fpslimit_obj, index)     // grava no controlador de FPS
- *      ↓                                  // *(PTR_DAT_1381110c + 0x4fc)
- *    _DAT_1380f72c = index                // cache global do indice atual
- *      ↓
- *    FUN_13693f74(index)                   // notifica TPointBlankPerformanceThread
- *      ↓                                  // DAT_13819b44 + 0x448
- *    FUN_13693fec(index)                   // persiste FPS_SELECTION_INDEX no reg.
- *      ↓
- *    FUN_13693e20(index)                   // aplicador completo (ver abaixo)
- *
- *  Dentro de FUN_13693e20 (@ 0x13693e20):
- *    FUN_13693810(index, &label)           // label de exibicao do preset (1-6)
- *    FUN_132ac010(ui_obj+0x560, label)     // atualiza 3 controles de UI
- *    FUN_132ac010(ui_obj+0x514, label)
- *    FUN_132ac010(ui_obj+0x55c, label)
- *    FUN_1369190c(perf_thread, index)      // sincroniza com a thread de perf.
- *    FUN_13693a64(index, &fps_val)         // string numerica do FPS para o jogo
- *    FUN_13574f7c(fps_obj, fps_val)        // ESCRITA FINAL: obj+0xc = fps_val
- *
- *  FUN_13574f7c (@ 0x13574f7c) — setter atomico do FPS cap no jogo:
- *    compara o novo valor com o atual em (fps_obj+0xc);
- *    se diferente: atribui + dispara FUN_13203484 (repaint/notifica motor).
- *
- *  Notificacao toast: "Windows Turbo +FPS" @ 0x136ec52c
+ *  ONDE O FPS CHEGA AO JOGO: NAO LOCALIZADO. O TRPPBConfig (§19) grava a
+ *  secao [Graphics] ("Graphics" @ 0x1358595c) de
+ *  <pasta do jogo>\EnvSet\env_settings.ini (@ 0x13584570) em FUN_13585130;
+ *  ali FPSType vem do campo +0x51c (chave @ 0x13585acc) e FPSVal do campo
+ *  +0x520 (chave @ 0x13585ae8). Nenhuma escrita nesses campos a partir do
+ *  indice FPS_SELECTION_INDEX foi encontrada: o global _DAT_1380f72c so e
+ *  acessado pelo proprio form, e os acessos a +0x51c perto de 0x1372b36d /
+ *  0x1372b6ce sao toggles do form principal, nao do TRPPBConfig.
  */
 
-/* Prototipos internos. */
-extern int  fps_clamp_preset(int index);                /* FUN_13693740 */
-extern void fps_verificar_jogo(void);                   /* FUN_13693d44 */
-extern void fps_notificar_thread(int index);            /* FUN_13693f74 */
-extern void fps_salvar_registro(int index);             /* FUN_13693fec */
-extern void fps_aplicar_no_jogo(int index);             /* FUN_13693e20 */
+/*
+ * fps_ler_indice_salvo  --  FUN_13693750 @ 0x13693750
+ */
+void fps_ler_indice_salvo(int *out)
+{
+    DelphiStr s = NULL, t = NULL;
+    *out = 3;
+    config_ler_str(*(void **)PTR_DAT_13811bac,
+                   L"FPS_SELECTION_INDEX", &s);                /* FUN_1369b8f4 */
+    trim(s, &t);                                               /* FUN_1316c638 */
+    if (t != NULL)
+        trystrtoint(t, out);                                   /* FUN_1316d204 */
+}
 
 /*
- * pb_fps_definir_preset  —  FUN_1369407c @ 0x1369407c
+ * fps_clamp_preset  --  FUN_13693740 @ 0x13693740
+ */
+int fps_clamp_preset(int index)
+{
+    if (index < 1 || index > 6)
+        index = 3;
+    return index;
+}
+
+/*
+ * fps_ao_aplicar_com_jogo_aberto  --  FUN_13693d44 @ 0x13693d44
  *
- * Define o teto de FPS do Point Blank pelo indice de preset (1–6).
- * Indice fora do intervalo resulta no preset 3 (medio) como padrao.
- * Esta funcao e o ponto de entrada tanto para o modo LIMITE DE FPS
- * quanto para o startup que re-aplica o valor salvo em FPS_SELECTION_INDEX.
+ * NAO verifica o jogo: so age quando ele ja esta aberto.
+ */
+void fps_ao_aplicar_com_jogo_aberto(void)
+{
+    if (*(int *)PTR_DAT_13810cd8 != 0 || *(int *)PTR_DAT_13811928 != 0) {
+        DAT_1380f724 = 1;
+        /* Consulta a chave L"FPS" (DAT_13693d80) no JSON de configuracoes;
+         * o valor lido e descartado nesta funcao.                            */
+        config_ler(*(void **)PTR_DAT_13811bac, L"FPS");      /* FUN_1369b87c */
+    }
+}
+
+/*
+ * fps_atualizar_controle  --  FUN_13693f74 @ 0x13693f74
+ *
+ * Repassa o indice ao controle TRPFpsLimit do form TUNLOCK_FPS (se aberto).
+ * NAO e uma thread de desempenho.
+ */
+void fps_atualizar_controle(int index)
+{
+    int idx = fps_clamp_preset(index);
+    if (DAT_13819b44 != 0) {
+        _DAT_1380f728 = idx;
+        /* FUN_1369190c: clamp 1..6 (FUN_13191200), grava em campo [0xc4]
+         * do controle e chama vtable+0xe0 (repintar) se mudou.               */
+        fpslimit_set_indice(*(void **)(DAT_13819b44 + 0x448), idx);
+    }
+}
+
+/*
+ * fps_preset_salvar  --  FUN_13693fec @ 0x13693fec
+ *
+ * IntToStr (FUN_1316cf60) + grava no JSON de configuracoes.
+ */
+void fps_preset_salvar(int index)
+{
+    DelphiStr s = NULL;
+    inttostr(fps_clamp_preset(index), &s);                     /* FUN_1316cf60 */
+    config_gravar(*(void **)PTR_DAT_13811bac,
+                  L"FPS_SELECTION_INDEX", s);                  /* FUN_1369b158 */
+}
+
+/*
+ * fps_atualizar_interface  --  FUN_13693e20 @ 0x13693e20
+ *
+ * So interface: rotulos do form principal (PTR_DAT_13810970) e legenda
+ * de um item de lista. Os textos de cada preset sao blobs ofuscados
+ * decodificados por FUN_134a8d98 (FUN_13693810 / FUN_13693a64), entao o
+ * texto exato de cada preset nao aparece em claro no binario.
+ */
+void fps_atualizar_interface(int index)
+{
+    DelphiStr rotulo = NULL, legenda = NULL;
+    int idx = fps_clamp_preset(index);
+
+    fps_rotulo_preset(idx, &rotulo);                           /* FUN_13693810 */
+    fps_mostrar_rotulos();                                     /* FUN_13693db4 */
+    vcl_set_text(*(void **)(*(int *)PTR_DAT_13810970 + 0x560), rotulo);
+    vcl_set_text(*(void **)(*(int *)PTR_DAT_13810970 + 0x514), rotulo);
+    vcl_set_text(*(void **)(*(int *)PTR_DAT_13810970 + 0x55c), rotulo);
+    if (DAT_13819b44 != 0)
+        fpslimit_set_indice(*(void **)(DAT_13819b44 + 0x448), idx);
+
+    fps_legenda_preset(idx, &legenda);                         /* FUN_13693a64 */
+    /* FUN_13574f7c: troca o texto em item+0xc e repinta (FUN_13203484).
+     * O item vem de form+0x5f8 -> +0x310 (FUN_13575414 / FUN_135750f8).     */
+    item_set_texto(lista_item(*(int *)PTR_DAT_13810970 + 0x5f8), legenda);
+}
+
+/*
+ * fps_previsualizar  --  @ 0x13693f9c (sem funcao definida no Ghidra)
+ *
+ * Usado por INC/DEC e RPFpsLimit1Change: atualiza o indice e a interface,
+ * mas NAO grava FPS_SELECTION_INDEX.
+ */
+void fps_previsualizar(int index)
+{
+    int idx = fps_clamp_preset(index);
+    _DAT_1380f72c = idx;
+    if (*(int *)PTR_DAT_1381110c != 0 &&
+        *(int *)(*(int *)PTR_DAT_1381110c + 0x4fc) != 0)
+        trackbar_set_posicao(*(void **)(*(int *)PTR_DAT_1381110c + 0x4fc),
+                             idx);                             /* FUN_132db2e0 */
+    fps_atualizar_controle(idx);
+    fps_atualizar_rotulo(idx);                                 /* FUN_13693f0c */
+}
+
+/*
+ * pb_fps_definir_preset  --  FUN_1369407c @ 0x1369407c
+ *
+ * Aplicar (Image3Click / RPFpsLimit1Apply). Igual a previsualizacao, mas
+ * tambem grava o indice no JSON e atualiza toda a interface.
+ *
+ * O objeto em PTR_DAT_1381110c + 0x4fc e um controle de interface:
+ * FUN_132db2e0 -> FUN_132db164(obj, pos, [+0x2ec], [+0x2f0]), padrao de
+ * SetParams de trackbar (posicao, minimo, maximo).
  */
 void pb_fps_definir_preset(int index)
 {
-    int clamped;
+    int idx = fps_clamp_preset(index);
 
-    clamped = fps_clamp_preset(index);   /* [1,6], default 3 se fora do range */
+    fps_ao_aplicar_com_jogo_aberto();
 
-    fps_verificar_jogo();                /* assegura que o jogo esta ativo     */
-
-    /* Grava no controlador interno do FPS (objeto em PTR_DAT_1381110c+0x4fc). */
     if (*(int *)PTR_DAT_1381110c != 0 &&
         *(int *)(*(int *)PTR_DAT_1381110c + 0x4fc) != 0)
-    {
-        FUN_132db2e0(
-            *(int *)(*(int *)PTR_DAT_1381110c + 0x4fc),
-            clamped);                    /* FUN_132db2e0 @ 0x132db2e0        */
-    }
+        trackbar_set_posicao(*(void **)(*(int *)PTR_DAT_1381110c + 0x4fc),
+                             idx);                             /* FUN_132db2e0 */
 
-    _DAT_1380f72c = clamped;             /* cache global do indice ativo       */
-
-    fps_notificar_thread(clamped);       /* wake TPointBlankPerformanceThread  */
-    fps_salvar_registro(clamped);        /* FPS_SELECTION_INDEX → reg.         */
-    fps_aplicar_no_jogo(clamped);        /* UI + escrita final no motor        */
+    _DAT_1380f72c = idx;
+    fps_atualizar_controle(idx);
+    fps_preset_salvar(idx);
+    fps_atualizar_interface(idx);
 }
 
 /*
- * pb_fps_ilimitado_ativar  —  modo SEM LIMITE
+ * config_gravar  --  FUN_1369b158 @ 0x1369b158
  *
- * Chamado quando o usuario seleciona "SEM LIMITE" (indice 10 na UI).
- * Envia o valor de FPS maximo ao jogo ("FPS 486", string em 0x13687df8)
- * e grava o marcador "UNLOCKEDFPS" na chave FPS_SELECTION_INDEX.
- *
- * O fluxo e diferente de pb_fps_definir_preset: o indice 10 nao passa
- * pela funcao de clamp (que retornaria 3 para valores fora de [1,6]).
- * Em vez disso, chama diretamente fps_aplicar_no_jogo com o valor 0 ou
- * usa uma sequencia separada que escrevia a string literal "FPS 486" em
- * (fps_obj+0xc) sem passar pelo conversor de presets.
- * A chave de estado registra "UNLOCKEDFPS" para que no proximo startup
- * o modo seja restaurado sem tentar parsear um numero de preset.
+ * Grava um par chave/valor no JSON de configuracoes guardado como string
+ * em PTR_DAT_13811610:
+ *   1. FUN_133db684: ParseJSONValue da string atual;
+ *   2. FUN_133e28dc: le o valor atual da chave;
+ *   3. FUN_133dd464: remove o par antigo; para certas chaves (comparadas
+ *      com strings ofuscadas) remove tambem pares relacionados;
+ *   4. FUN_133dd2e0: adiciona o novo par;
+ *   5. FUN_133d9aac: serializa e grava de volta em PTR_DAT_13811610.
  */
-void pb_fps_ilimitado_ativar(void)
-{
-    /* Grava o marcador de modo ilimitado. */
-    RegSetValueExW(                                    /* via FUN_13693fec     */
-        HKEY_CURRENT_USER,
-        L"Keyboard Layout\\ReetFPS",
-        L"FPS_SELECTION_INDEX",                        /* @ 0x136937e8         */
-        L"UNLOCKEDFPS");                               /* @ 0x13693728         */
 
-    /* Envia ao motor do Point Blank o teto maximo de FPS.
-     * "FPS 486" e a string estatica usada como valor de FPS ilimitado.  */
-    fps_aplicar_fps_string(L"FPS 486");                /* string @ 0x13687df8  */
-
-    /* Notifica o usuario. */
-    FUN_1358027c(
-        L"ReetFPS",
-        L"Windows Turbo +FPS ativado!\r\n"
-         "FPS ilimitado aplicado no Point Blank.",     /* @ 0x136ec52c         */
-        0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
-        L"icon.png", 0xffffffff, 0xffffffff, 0xffffffff, 1, 1, 1);
-}
-
-/*
- * pb_fps_preset_salvar  —  FUN_13693fec @ 0x13693fec
- *
- * Persiste o indice de preset escolhido (1-6) como string decimal
- * em "Keyboard Layout\ReetFPS\FPS_SELECTION_INDEX" (HKCU).
- * No modo SEM LIMITE, a string gravada e "UNLOCKEDFPS" (ver acima).
- */
-void pb_fps_preset_salvar(int index)
-{
-    wchar_t buf[8];
-    _itow_s(index, buf, 8, 10);           /* convert int → "1".."6"           */
-
-    RegSetValueExW(
-        HKEY_CURRENT_USER,
-        L"Keyboard Layout\\ReetFPS",      /* @ 0x13467cd4                     */
-        L"FPS_SELECTION_INDEX",           /* @ 0x136937e8                     */
-        buf);
-}
+/* Prototipos desta secao. */
+extern void  config_ler(void *cfg, const wchar_t *chave);                 /* FUN_1369b87c */
+extern void  config_gravar(void *cfg, const wchar_t *chave, DelphiStr v); /* FUN_1369b158 */
+extern void  config_ler_str(void *cfg, const wchar_t *chave, DelphiStr *v); /* FUN_1369b8f4 */
+extern void  trim(DelphiStr s, DelphiStr *dst);                           /* FUN_1316c638 */
+extern bool  trystrtoint(DelphiStr s, int *v);                            /* FUN_1316d204 */
+extern void  inttostr(int v, DelphiStr *dst);                             /* FUN_1316cf60 */
+extern void  fpslimit_set_indice(void *controle, int idx);                /* FUN_1369190c */
+extern void  trackbar_set_posicao(void *controle, int pos);               /* FUN_132db2e0 */
+extern void  fps_rotulo_preset(int idx, DelphiStr *dst);                  /* FUN_13693810 */
+extern void  fps_legenda_preset(int idx, DelphiStr *dst);                 /* FUN_13693a64 */
+extern void  fps_mostrar_rotulos(void);                                   /* FUN_13693db4 */
+extern void  fps_atualizar_rotulo(int idx);                               /* FUN_13693f0c */
+extern void  vcl_set_text(void *controle, DelphiStr texto);               /* FUN_132ac010 */
+extern void *lista_item(int controle_lista);           /* FUN_13575414 + FUN_135750f8 */
+extern void  item_set_texto(void *item, DelphiStr texto);                 /* FUN_13574f7c */
+extern int   DAT_1380f724, _DAT_1380f728, _DAT_1380f72c, DAT_13819b44;
 
 
 /* ===========================================================================
- *  18) MAPAS INSTANTANEOS
+ *  18) MAPAS INSTANTANEOS  (item de recomendacao "LOADINGMAP")
  * ===========================================================================
  *
- *  Pacote de otimizacoes voltado a reduzir o tempo de carregamento de mapa
- *  no Point Blank.  O painel agrupa tres itens de perfil que juntos eliminam
- *  a concorrencia de disco/CPU durante o loading:
+ *  No binario, "mapas instantaneos" corresponde ao item LOADINGMAP
+ *  ("Carregamento de mapa otimizado" @ 0x136ece50, icone "clock") da lista
+ *  generica de recomendacoes. Nao existe um painel proprio.
  *
- *    1. SUPERFETCH_ON  -- desativa SysMain/Superfetch, que faz pre-cargas em
- *                         background e provoca I/O durante o loading do mapa.
- *    2. LOADINGMAP     -- ajusta os timeouts de cache do redirector de rede
- *                         (LanmanWorkstation), zerando os tempos de cache de
- *                         diretorio, arquivos nao-encontrados e info de arquivo
- *                         para que leituras de pacotes do jogo nunca batam em
- *                         entradas obsoletas.
- *    3. FULLSCREEN     -- forca o modo tela cheia exclusivo do Point Blank,
- *                         reduzindo interferencias visuais do compositor DWM
- *                         e melhorando a estabilidade de frame.
+ *  LISTA DE RECOMENDACOES: FUN_136ec13c @ 0x136ec13c (a mesma tabela que a
+ *  §9 descreve). Cada item e criado por FUN_136ebbb4(painel, chave, titulo,
+ *  1, grupo, icone, descricao):
+ *    grupo +0x310 (ajustes do Windows): Energia_ON ("Windows Turbo +FPS"),
+ *      Hibernate_ON, Cortana_ON, TarefaTelemetria_ON, Superfetch_ON,
+ *      ADMENU_ON, OpMouse_ON
+ *    grupo +0x311 (perfil do PointBlank): FLUIDEZMAX, LOADINGMAP,
+ *      FULLSCREEN, OPTIMIZER_PB_MANAGER, PRIORITYPB, INTERFACE,
+ *      FPS_SELECTION_INDEX, REETGAMEMODE
+ *  Superfetch_ON e um item separado, do outro grupo: NAO faz parte do
+ *  LOADINGMAP.
  *
- *  PANEL INIT:  FUN_136ec13c @ 0x136ec13c
- *    Monta a lista de itens do painel; chamado ao abrir o formulario de
- *    MAPAS INSTANTANEOS.  Os itens em (param_1+0x310) sao configuracoes
- *    "a fazer"; os em (param_1+0x311) sao itens ja aplicados/ativos.
+ *  DESPACHANTE: FUN_136f78d0 @ 0x136f78d0 compara a chave do item com as
+ *  strings em 0x136f7ae0..0x136f7c24 e chama o handler pelo invocador
+ *  FUN_136f782c(codigo, form_principal):
+ *    FLUIDEZMAX / FLUIDEZMAXIMA  -> 0x1372a03c
+ *    FULLSCREEN                  -> 0x1372dfb0
+ *    OPTIMIZER_PB_MANAGER        -> 0x13729094
+ *    FPS_SELECTION_INDEX         -> 0x137294d8  (abre o form da §17)
+ *    PRIORITYPB                  -> 0x1372e888
+ *    LOADINGMAP  @ 0x136f7be0    -> FUN_13728d20
+ *    INTERFACE   @ 0x136f7c04    -> 0x1372d4b8
+ *    REETGAMEMODE @ 0x136f7c24   -> 0x1372c00c
+ *  Chave desconhecida gera excecao (mensagem @ 0x136f7c4c). Se o form
+ *  principal nao existe, a excecao usa "GameBooster nao esta criado."
+ *  @ 0x136f7a98. Estas strings sao comparacoes do despachante, NAO chaves
+ *  de registro.
  *
- *  STRINGS DE UI
- *    "LOADINGMAP"                    @ 0x136ecd60  (chave de estado / profile item)
- *    "Carregamento de mapa otimizado"@ 0x136ece50  (label do item no painel)
- *    "FULLSCREEN"                    @ 0x136ece9c  (chave de estado)
- *    "Tela cheia otimizada"          @ 0x136ecfb4  (label FULLSCREEN)
- *    "Superfetch_ON"                 @ 0x136ec920  (chave Superfetch)
- *    "Desativar Superfetch"          @ 0x136eca0c  (label Superfetch)
+ *  HANDLER: FUN_13728d20 @ 0x13728d20
+ *    Mesmo padrao das §20/§21, com o objeto em PTR_DAT_1381110c + 0x4b0:
+ *    troca os botoes do painel, chama vtable+0x188(obj, 1), grava um par no
+ *    JSON de configuracoes e, se pedido, mostra o card. Chave, valor e
+ *    textos do card sao blobs ofuscados (DAT_13728ef8, DAT_13728f10,
+ *    DAT_13728f4c, LAB_13728fbc).
  *
- *  ESTADO PERSISTIDO (HKCU\Keyboard Layout\ReetFPS)
- *    "LOADINGMAP"         @ 0x136f7be0  -- estado do item de carregamento
- *    "FULLSCREEN"         @ 0x136f7b2c  -- estado do fullscreen
- *    "Superfetch_ON"      @ 0x136f776c  -- estado do Superfetch
- *
- *  COMANDOS SUPERFETCH_ON (item 1):
- *    sc stop SysMain > nul 2>&1                             @ 0x135d2ab4
- *    sc config SysMain start= disabled > nul 2>&1          @ 0x135d2af8
- *    reg add "HKLM\...\PrefetchParameters"
- *            /v EnableSuperfetch /t REG_DWORD /d 0 /f      @ 0x135f0438
- *    reg add "HKLM\...\PrefetchParameters"
- *            /v EnablePrefetcher /t REG_DWORD /d 0 /f      @ 0x135f0560
- *
- *  COMANDOS LOADINGMAP (item 2, LanmanWorkstation cache lifetimes):
- *    reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\
- *             Services\LanmanWorkstation\Parameters"
- *            /v DirectoryCacheLifetime  /t REG_DWORD /d 0 /f >nul 2>&1
- *                                                           @ 0x135d50b4
- *    reg add "...\LanmanWorkstation\Parameters"
- *            /v FileNotFoundCacheLifetime /t REG_DWORD /d 0 /f >nul 2>&1
- *                                                           @ 0x135d51ec
- *    reg add "...\LanmanWorkstation\Parameters"
- *            /v FileInfoCacheLifetime   /t REG_DWORD /d 0 /f >nul 2>&1
- *                                                           @ 0x135d5328
- *
- *  COMANDO FULLSCREEN (item 3):
- *    Descricao: "Aplica o modo tela cheia recomendado para reduzir
- *    interferencias visuais e melhorar estabilidade."      @ 0x136ece9c
- *    (O mecanismo exato de fullscreen -- arquivo .ini ou parametro de
- *    linha de comando do PB -- nao foi localizado nas regioes acessiveis
- *    do binario; o item e despachado pelo mecanismo generico de perfil.)
+ *  O QUE NAO FOI COMPROVADO
+ *    Que comandos o sistema executa quando o objeto em +0x4b0 recebe
+ *    vtable+0x188(1). A versao anterior desta secao ligava LOADINGMAP aos
+ *    caches do LanmanWorkstation (0x135d50b4 / 0x135d51ec / 0x135d5328) e
+ *    ao SysMain/Prefetch. Esses comandos existem no catalogo, mas nenhuma
+ *    referencia a partir de FUN_13728d20 foi encontrada.
+ *    INFERIDO: o objeto em +0x4b0 e um controle do painel (o metodo
+ *    vtable+0x188 e o mesmo usado em outros toggles de interface). O
+ *    trabalho real deve ocorrer num evento desse controle, que nao foi
+ *    rastreado.
  */
-
-/* Desativa SysMain/Superfetch para liberar disco durante o loading.       */
-static void mapas_desativar_superfetch(void)
-{
-    /* 0x135d2ab4 */
-    executar_cmd("sc stop SysMain > nul 2>&1");
-    /* 0x135d2af8 */
-    executar_cmd("sc config SysMain start= disabled > nul 2>&1");
-    /* 0x135f0438 */
-    executar_cmd("reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager"
-                 "\\Memory Management\\PrefetchParameters\""
-                 " /v EnableSuperfetch /t REG_DWORD /d 0 /f");
-    /* 0x135f0560 */
-    executar_cmd("reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager"
-                 "\\Memory Management\\PrefetchParameters\""
-                 " /v EnablePrefetcher /t REG_DWORD /d 0 /f");
-}
-
-/* Zera os timeouts de cache do LanmanWorkstation para eliminar leituras
- * de cache obsoletas dos pacotes do jogo.                                 */
-static void mapas_configurar_lanman_cache(void)
-{
-    /* 0x135d50b4 */
-    executar_cmd("reg add \"HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet"
-                 "\\Services\\LanmanWorkstation\\Parameters\""
-                 " /v DirectoryCacheLifetime /t REG_DWORD /d 0 /f >nul 2>&1");
-    /* 0x135d51ec */
-    executar_cmd("reg add \"HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet"
-                 "\\Services\\LanmanWorkstation\\Parameters\""
-                 " /v FileNotFoundCacheLifetime /t REG_DWORD /d 0 /f >nul 2>&1");
-    /* 0x135d5328 */
-    executar_cmd("reg add \"HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet"
-                 "\\Services\\LanmanWorkstation\\Parameters\""
-                 " /v FileInfoCacheLifetime /t REG_DWORD /d 0 /f >nul 2>&1");
-}
 
 /*
- * pb_mapas_instantaneos_ativar  --  ponto de entrada do perfil MAPAS INSTANTANEOS
+ * pb_loadingmap_ativar  --  FUN_13728d20 @ 0x13728d20
  *
- * Despacha os tres itens de perfil em sequencia e grava o estado em
- * "Keyboard Layout\ReetFPS" (chaves LOADINGMAP, FULLSCREEN, Superfetch_ON).
- * O mecanismo generico executar_itens_habilitados (FUN_137008d0) cuida do
- * despacho dos itens e do registro de estado; este codigo reflete a logica
- * especifica de cada item.
- *
- * Panel init: FUN_136ec13c @ 0x136ec13c
+ * form       : form principal (passado pelo despachante)
+ * mostrar_card: != 0 exibe o card de notificacao
  */
-void pb_mapas_instantaneos_ativar(int painel)
+void pb_loadingmap_ativar(int form, int mostrar_card)
 {
-    /* Item 1: Superfetch_ON -- para SysMain e desabilita pre-cargas.      */
-    mapas_desativar_superfetch();
+    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
+        pb_jogo_nao_aberto();                                 /* FUN_135fcd18 */
+        return;
+    }
 
-    /* Item 2: LOADINGMAP -- zera caches do redirector de rede.            */
-    mapas_configurar_lanman_cache();
+    vcl_set_visible(*(void **)(form + 0x4e0), 0);             /* FUN_132abec4 */
+    vcl_set_visible(*(void **)(form + 0x4dc), 1);
 
-    /* Item 3: FULLSCREEN -- o despacho do modo tela cheia e feito pelo
-     * mecanismo generico de perfil; sem codigo especifico localizado.     */
-    executar_itens_habilitados(painel);   /* FUN_137008d0 */
+    {
+        int *obj = *(int **)(*(int *)PTR_DAT_1381110c + 0x4b0);
+        (*(void (**)(int *, int))(*obj + 0x188))(obj, 1);
+    }
+
+    {
+        DelphiStr chave = NULL, valor = NULL;
+        decodificar_string(&chave, (void *)0x13728ef8);       /* FUN_134a8d98 */
+        decodificar_string(&valor, (void *)0x13728f10);
+        config_gravar(*(void **)PTR_DAT_13811bac, chave, valor); /* FUN_1369b158 */
+    }
+
+    if (mostrar_card) {
+        DelphiStr titulo = NULL, corpo = NULL;
+        decodificar_string(&titulo, (void *)0x13728f4c);
+        decodificar_string(&corpo,  (void *)0x13728fbc);
+        notificacao_card(titulo, corpo, 0x1194);              /* FUN_1358027c */
+    }
 }
 
-/* Externs desta secao (mesmos auxiliares dos modulos anteriores).        */
-extern void executar_cmd(const char *linha);
-extern void executar_itens_habilitados(int painel);  /* FUN_137008d0 */
+/* Prototipos desta secao. */
+extern void pb_jogo_nao_aberto(void);                              /* FUN_135fcd18 */
+extern void vcl_set_visible(void *controle, int visivel);          /* FUN_132abec4 */
+extern void decodificar_string(DelphiStr *dst, void *blob);        /* FUN_134a8d98 + FUN_1314c690 */
+extern void notificacao_card(DelphiStr titulo, DelphiStr corpo, int duracao_ms); /* FUN_1358027c */
 
 
 /* ============================================================================
