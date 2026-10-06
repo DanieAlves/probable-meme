@@ -13,12 +13,15 @@
  *    para voce poder abrir a mesma funcao no Ghidra e conferir.
  *
  *  RESUMO DO QUE O PROGRAMA FAZ
- *    1) Tela de LOGIN: le usuario/senha, valida localmente so que nao estao
- *       vazios e envia para um servidor (autenticacao e REMOTA, via HTTP).
- *    2) OTIMIZADOR: aplica um catalogo grande de ajustes no Windows executando
- *       comandos de shell (reg add, sc, bcdedit, netsh, powercfg, remocao de
- *       appx, etc.). O catalogo completo esta em "catalogo_comandos.md" e as
- *       estruturas de dados estao em "catalogo_comandos.c".
+ *    OTIMIZADOR: aplica um catalogo grande de ajustes no Windows executando
+ *    comandos de shell (reg add, sc, bcdedit, netsh, powercfg, remocao de
+ *    appx, etc.). O catalogo completo esta em "catalogo_comandos.md" e as
+ *    estruturas de dados estao em "catalogo_comandos.c".
+ *
+ *    NOTA: o fluxo de LOGIN/autenticacao remota e as validacoes de plano/
+ *    licenca foram RETIRADOS desta reconstrucao (projeto em homologacao,
+ *    caminho para open source). Nao ha mais tela de login nem checagem de
+ *    credenciais/licenca neste codigo.
  *
  *  COMPILADOR DETECTADO : Borland/Embarcadero Delphi (x86, 32-bit)
  *  IMAGE BASE           : 0x13140000
@@ -34,8 +37,7 @@
 
 /* No Delphi, uma "string" (UnicodeString) e um ponteiro para um buffer de
  * WideChar com cabecalho de tamanho/refcount antes do ponteiro. Aqui tratamos
- * como ponteiro opaco; "vazia" == ponteiro nulo (foi exatamente assim que a
- * validacao de login testou os campos). */
+ * como ponteiro opaco; "vazia" == ponteiro nulo. */
 typedef void *DelphiStr;
 
 /* Instancia de formulario/VCL. Acessamos campos por offset, como no binario. */
@@ -43,158 +45,7 @@ typedef uint8_t TForm;
 
 
 /* ===========================================================================
- *  1) LOGIN
- * ===========================================================================
- *
- *  Handler original: LoginButton_Panel2Click
- *      - Nome publicado na RTTI em 0x137142f5.
- *      - O ponteiro RTTI (0x137161f4) e um thunk: "CALL 0x1371598c; RET".
- *      - A funcao real do clique e FUN_1371598c  ->  LoginButton_Click abaixo.
- *
- *  Estado global:
- *      DAT_13810328  ->  g_login_em_andamento  (flag: ja clicou em entrar)
- *      DAT_13819f04  ->  g_form_login          (instancia do formulario)
- *
- *  Campos do formulario de login (offsets observados no binario):
- *      +0x474  ->  edit do USUARIO   (TEdit.Text)
- *      +0x478  ->  edit da SENHA     (TEdit.Text)
- *      +0x488  ->  rotulo de status: recebe o texto e fica visivel
- *                  (no sucesso E no erro)
- *      +0x468  ->  controle passado a vtbl+0xA0 com 0 ao entrar
- *      +0x48c  ->  controle passado a vtbl+0xA0 com 0 ao entrar
- *      +0x490  ->  indicador de progresso: fica VISIVEL e tem a animacao
- *                  ligada ao entrar (FUN_132abec4(...,1) + FUN_13612d5c(...,1))
- *
- *  Objeto de credenciais (tipo em DAT_13715434; a RTTI publica os campos
- *  "LoginValue" e "PasswordValue"). Pelo uso, e o objeto de captura de um
- *  metodo anonimo do Delphi: guarda as variaveis capturadas e expoe em +0x14
- *  a interface da rotina que roda na task.
- *      +0x10  ->  usuario, ja com Trim  (LoginValue)
- *      +0x0c  ->  senha, sem Trim        (PasswordValue)
- *      +0x14  ->  interface da rotina anonima (passada a TTask)
- *
- *  Os textos exibidos no rotulo +0x488 estao OFUSCADOS no binario
- *  (DAT_13715c68 no sucesso, DAT_13715c3c no erro) e so existem depois de
- *  decodificados por FUN_134a8d98. Por isso nao aparecem como texto aqui.
- */
-
-extern char       g_login_em_andamento;   /* DAT_13810328 */
-extern TForm     *g_form_login;            /* DAT_13819f04 */
-extern void      *g_application;           /* *PTR_DAT_13811668 (TApplication) */
-extern void      *g_chave_decodificacao;   /* *PTR_DAT_13811378 */
-
-/* Getter de propriedade .Text de um controle VCL (FUN_132abfc0). */
-extern void  vcl_get_text(void *controle, DelphiStr *destino);
-/* Setter de .Text: so escreve se o texto mudou (FUN_132ac010). */
-extern void  vcl_set_text(void *controle, DelphiStr texto);
-/* TControl.SetVisible: escreve o campo +0x69 e envia CM_VISIBLECHANGED
- * (0xB00B) (FUN_132abec4). */
-extern void  vcl_set_visible(void *controle, int visivel);
-/* Metodo virtual em vtbl+0xA0 chamado com 0.
- * INFERIDO: provavelmente TControl.SetEnabled, que e virtual na VCL
- * (SetVisible nao e, e aparece como chamada direta acima). */
-extern void  vcl_vmethod_a0(void *controle, int valor);
-/* Liga/desliga a animacao de um indicador customizado (FUN_13612d5c):
- * grava o flag em +0x2e0, zera o contador +0x2ec e chama vtbl+0x188 (liga)
- * ou vtbl+0x18c (desliga); depois habilita o timer em +0x2f0 (FUN_132f2848). */
-extern void  indicador_set_animando(void *controle, int ligado);
-/* Application.ProcessMessages: repete PeekMessage/Translate/Dispatch enquanto
- * houver mensagens (FUN_1335dc40 -> FUN_1335db2c). */
-extern void  app_process_messages(void *application);
-/* Trim: remove caracteres <= ' ' das duas pontas (FUN_1316c638). */
-extern void  str_trim(DelphiStr origem, DelphiStr *destino);
-/* Atribui uma UnicodeString a outra com contagem de referencia (FUN_1314bc9c). */
-extern void  str_assign(DelphiStr *destino, DelphiStr origem);
-/* Decodifica uma string ofuscada do binario (FUN_134a8d98 -> FUN_134a8c90 +
- * FUN_134a8d34), convertida para UnicodeString por FUN_1314c690.
- * O terceiro argumento (0xff / 0x11c) e mais dois inteiros empilhados vao
- * para o decodificador; o significado de cada um nao foi identificado. */
-extern void  str_decodificar(void *chave, const void *blob, int p3, DelphiStr *destino);
-/* Cria o objeto de credenciais/captura (FUN_13149aa8(&DAT_13715434,1)). */
-extern void *cred_record_new(void);
-/* Cria uma TTask do System.Threading (FUN_13498880(&PTR_LAB_1348d760,1,0,...))
- * com a rotina anonima em cred+0x14 e o argumento *PTR_DAT_13810c60, e chama
- * o metodo da interface em vtbl+0x24 (o resultado, uma interface, e liberado
- * logo em seguida).
- * INFERIDO: vtbl+0x24 e ITask.Start, e a rotina anonima faz a autenticacao
- * HTTP (classes no binario: System.Net.URLClient, TCredentialsStorage,
- * TIdHTTP/TIdAuthentication). O corpo da rotina nao foi decompilado. */
-extern void  auth_task_iniciar(void *cred_record);
-
-/*
- * LoginButton_Click  (original: FUN_1371598c @ 0x1371598c)
- *
- * Fluxo observado na decompilacao:
- */
-void LoginButton_Click(void)
-{
-    void      *cred;
-    DelphiStr  usuario_bruto = NULL;   /* local_18 no binario */
-    DelphiStr  usuario       = NULL;   /* resultado do Trim   */
-    DelphiStr  senha         = NULL;   /* local_1c no binario */
-    DelphiStr  texto         = NULL;
-
-    /* Cria o objeto de credenciais ANTES da guarda (tipo DAT_13715434). */
-    cred = cred_record_new();                      /* FUN_13149aa8(&DAT_13715434,1) */
-
-    /* Guarda: so prossegue se nao ha login em andamento e o form existe. */
-    if (g_login_em_andamento != 0 || g_form_login == NULL)
-        return;
-
-    /* USUARIO: le o texto e aplica Trim antes de guardar. */
-    vcl_get_text(*(void **)((uint8_t *)g_form_login + 0x474), &usuario_bruto);
-    str_trim(usuario_bruto, &usuario);                         /* FUN_1316c638 */
-    str_assign((DelphiStr *)((uint8_t *)cred + 0x10), usuario);
-
-    /* SENHA: guardada como digitada (sem Trim). */
-    vcl_get_text(*(void **)((uint8_t *)g_form_login + 0x478), &senha);
-    str_assign((DelphiStr *)((uint8_t *)cred + 0x0c), senha);
-
-    /* ------------------------------------------------------------------
-     *  A VALIDACAO LOCAL E APENAS ESTA: os dois campos nao podem estar
-     *  vazios (ponteiro de string != NULL). Como o usuario passou por Trim,
-     *  um usuario so com espacos conta como vazio. NAO ha conferencia de
-     *  senha aqui - isso e feito pelo servidor.
-     * ------------------------------------------------------------------ */
-    bool usuario_preenchido = (*(void **)((uint8_t *)cred + 0x10) != NULL);
-    bool senha_preenchida   = (*(void **)((uint8_t *)cred + 0x0c) != NULL);
-
-    if (usuario_preenchido && senha_preenchida)
-    {
-        /* --- SUCESSO: campos ok, inicia autenticacao remota --- */
-        g_login_em_andamento = 1;                       /* DAT_13810328 = 1 */
-
-        vcl_vmethod_a0(*(void **)((uint8_t *)g_form_login + 0x48c), 0);
-        vcl_vmethod_a0(*(void **)((uint8_t *)g_form_login + 0x468), 0);
-
-        /* Texto de status (ofuscado em DAT_13715c68) no rotulo +0x488. */
-        str_decodificar(g_chave_decodificacao, (void *)0x13715c68, 0xff, &texto);
-        vcl_set_text   (*(void **)((uint8_t *)g_form_login + 0x488), texto);
-        vcl_set_visible(*(void **)((uint8_t *)g_form_login + 0x488), 1);
-
-        /* Indicador de progresso +0x490: visivel e animando. */
-        vcl_set_visible       (*(void **)((uint8_t *)g_form_login + 0x490), 1);
-        indicador_set_animando(*(void **)((uint8_t *)g_form_login + 0x490), 1); /* FUN_13612d5c */
-
-        /* Processa mensagens pendentes para a UI redesenhar ja. */
-        app_process_messages(g_application);            /* FUN_1335dc40 */
-
-        /* Dispara a task que envia usuario+senha ao servidor. */
-        auth_task_iniciar(cred);
-    }
-    else
-    {
-        /* --- ERRO: algum campo vazio --- */
-        /* Texto de erro (ofuscado em DAT_13715c3c) no rotulo +0x488. */
-        str_decodificar(g_chave_decodificacao, (void *)0x13715c3c, 0x11c, &texto);
-        vcl_set_text   (*(void **)((uint8_t *)g_form_login + 0x488), texto);
-        vcl_set_visible(*(void **)((uint8_t *)g_form_login + 0x488), 1);
-    }
-}
-
-
-/* ===========================================================================
- *  2) RESOLVEDOR DO CAMINHO DO POWERSHELL
+ *  1) RESOLVEDOR DO CAMINHO DO POWERSHELL
  * ===========================================================================
  *
  *  Original: FUN_135401d0 @ 0x135401d0
@@ -250,7 +101,7 @@ void resolver_caminho_powershell(DelphiStr *destino)
 
 
 /* ===========================================================================
- *  3) OTIMIZADOR (visao geral)
+ *  2) OTIMIZADOR (visao geral)
  * ===========================================================================
  *
  *  O nucleo do "boost" e um catalogo de ajustes do Windows. Cada ajuste e,

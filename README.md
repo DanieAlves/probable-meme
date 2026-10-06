@@ -7,12 +7,16 @@ programa faz**, não recompilá-lo.
 ## O que é o ReetFPS
 
 Um "otimizador de FPS" para o jogo **Point Blank**, escrito em **Delphi**
-(RAD Studio / VCL), x86 32-bit. Ele faz duas coisas centrais:
+(RAD Studio / VCL), x86 32-bit. Sua função central é:
 
-1. **Login** contra um servidor (autenticação remota via HTTP).
-2. **Otimização do Windows**: aplica um catálogo grande de ajustes executando
-   comandos de shell elevados (`reg add`, `sc`, `bcdedit`, `netsh`, `powercfg`,
-   remoção de appx, etc.).
+- **Otimização do Windows**: aplica um catálogo grande de ajustes executando
+  comandos de shell elevados (`reg add`, `sc`, `bcdedit`, `netsh`, `powercfg`,
+  remoção de appx, etc.).
+
+> **Nota:** o fluxo de **login**/autenticação remota e as **validações de
+> plano/licença** foram **retirados** desta reconstrução (projeto em
+> homologação, caminho para open source). Esta documentação descreve o
+> estado atual, sem login nem checagem de credenciais/licença.
 
 Metadados do binário:
 
@@ -28,7 +32,7 @@ Metadados do binário:
 
 | Arquivo | Conteúdo |
 |---|---|
-| `reetfps.c` | Lógica reconstruída e comentada: fluxo de **login**, **resolvedor do PowerShell** e o **modelo do otimizador**. É o arquivo para ler primeiro. |
+| `reetfps.c` | Lógica reconstruída e comentada: **resolvedor do PowerShell** e o **modelo do otimizador**. É o arquivo para ler primeiro. |
 | `ponto_blank.c` | 24 seções. Rotinas ligadas ao Point Blank (instalação, encerramento, prioridade de CPU/GPU, crashes, timer resolution), as funcionalidades da tela do programa (teclado, interface, FPS, mapas, mini-map, tela cheia, GPU, mira) e, na seção 24, a cadeia de carregamento `ReetFPS.exe → ReetFPS.dll → window.ime` (só descrição, sem código de injeção). O cabeçalho tem o índice e as convenções (`INFERIDO:` marca o que não foi comprovado). |
 | `strings_decifradas.md` | Texto em claro das **988** strings cifradas do `ReetFPS.exe` (de 1011 chamadas ao decodificador), com a cifra explicada, o método de validação e a seção de uso de cada uma; mais as strings decifradas da `ReetFPS.dll`. |
 | `catalogo_comandos.md` | Os **559 comandos** do otimizador, agrupados por efeito, em formato legível. |
@@ -41,7 +45,7 @@ Metadados do binário:
 | Arquivo | O que é |
 |---|---|
 | `ReetFPS.dll` | DLL C++ (MSVC) **sem exports**, com strings cifradas. Não contém as features: espera o `PointBlank.exe` e injeta nele um terceiro módulo, `window.ime`, pelo mecanismo de IME do Windows (seção 24 do `ponto_blank.c`). O `ReetFPS.exe` baixa uma biblioteca de `reetfps.com/update/lib_update.php?index=2` e a carrega da memória em outro processo; que seja esta DLL é inferido. |
-| `window.ime` | O módulo que aplica as features do painel **dentro do jogo**. **Não existe no disco** (nem em System32/SysWOW64/Temp/AppData); provavelmente vem do servidor após o login. Por isso o efeito real de MINI-MAP OFF, tela cheia/F6, teclado de precisão, interface do lobby etc. não pôde ser verificado. |
+| `window.ime` | O módulo que aplica as features do painel **dentro do jogo**. **Não existe no disco** (nem em System32/SysWOW64/Temp/AppData); provavelmente vem do servidor na inicialização. Por isso o efeito real de MINI-MAP OFF, tela cheia/F6, teclado de precisão, interface do lobby etc. não pôde ser verificado. |
 | `ReetFix.exe` | Reparador/atualizador Delphi (`TFReetFix`). Uma cópia está **embutida no próprio `ReetFPS.exe`** no offset de arquivo `0x134297c` (cabeçalho `MZ`/`PE` conferido; os primeiros 64 KiB são idênticos ao `ReetFix.exe` em disco). |
 | `libeay32.dll` / `ssleay32.dll` | OpenSSL usado pelo Indy (HTTPS). |
 | `uninstall.exe` | Desinstalador. |
@@ -64,14 +68,11 @@ definida no Ghidra; foram lidos pela desmontagem (prólogo `55 8B EC`).
 | `0x1369beb0` | Restaura o estado do painel: para cada chave ativa no JSON, chama de novo o handler (sem card) | — | 19 |
 | `0x1354db34` / `0x1354cb2c` | Envia o JSON de configurações ao servidor (`setConfig=` / `connect=` … `&content=`) | — | cabeçalho |
 | `0x132abec4` | `TControl.SetVisible` | `vcl_set_visible()` | todas |
-| `0x135fcd18` | Aviso **"plano Basic não oferece suporte… adquirir o plano Advanced"** (não é "jogo não encontrado") | `aviso_plano_basic()` | 17–22 |
 
-**Login e otimizador (`reetfps.c`)**
+**Otimizador (`reetfps.c`)**
 
 | Endereço | Papel | Nome no C |
 |---|---|---|
-| `0x1371598c` | Clique no botão de login (`LoginButton_Panel2Click`) | `LoginButton_Click()` |
-| `0x137161f4` | Thunk RTTI → `CALL 0x1371598c; RET` | — |
 | `0x135401d0` | Caminho absoluto do `powershell.exe` (Sysnative vs System32) | `resolver_caminho_powershell()` |
 
 **Point Blank e funcionalidades (`ponto_blank.c`)**
@@ -125,7 +126,6 @@ definida no Ghidra; foram lidos pela desmontagem (prólogo `55 8B EC`).
 | `0x136c1ad6` | ActRec de `TGPU_Utils.NVIDIABOOST_OFFClick` (importa `ReetFPS.nip`) | `gpu_nvidiaboost_aplicar()` | 23 |
 | `0x13734cd1` | `TGPURegistryWorker` (contadores PDH de uso/memória da GPU) | — | 23 |
 | `0x136e7958` | `cLoadLibrary.Initialize`: tarefa que baixa `lib_update.php?index=2` e carrega a biblioteca da memória em outro processo | — | 24 |
-| `0x1361508c` | Desenho do botão "LOGIN"/"ENTRANDO..." | — (apenas UI) | — |
 | `0x1359474c` | Desenho do card "APLICAR PERFIL"/"PERFIL ATIVO" | — (apenas UI) | — |
 
 **`ReetFPS.dll` (programa separado no Ghidra, image base `0x10000000`)** — ver seção 24
@@ -140,26 +140,6 @@ definida no Ghidra; foram lidos pela desmontagem (prólogo `55 8B EC`).
 | `0x100024c0` | Injeção por IME (instala layout "window" e pede troca de idioma à janela do jogo) |
 | `0x10002100` | Limpeza: `UnloadKeyboardLayout` + apaga o valor em `HKCU\Keyboard Layout\Preload` |
 | `0x10001270` | Confere com `Module32First/Next` se `window.ime` está carregado no jogo |
-
-Estado global do login:
-
-| Endereço | Significado |
-|---|---|
-| `DAT_13810328` | flag "login em andamento" |
-| `DAT_13819f04` | instância do formulário de login |
-
-## Como a validação de login funciona (resumo)
-
-O handler lê os dois campos de texto do formulário (usuário em `+0x474`, senha
-em `+0x478`), aplica `Trim` só ao usuário (`FUN_1316c638`), guarda num registro
-de credenciais (usuário em `+0x10`, senha — campo `PasswordValue` — em `+0x0c`)
-e faz **apenas uma checagem local: os dois campos não podem estar vazios**. Se
-ok, oculta os botões de login, exibe o indicador de progresso (`+0x490`) e o
-rótulo de status (`+0x488`), e dispara o worker (uma `TTask`) que envia as
-credenciais ao servidor. **A conferência da senha é remota** — não há
-comparação de senha dentro do executável. Classes de rede
-presentes no binário: `System.Net.URLClient`, `TCredentialsStorage`,
-`TIdHTTP`/`TIdAuthentication`.
 
 ## O que o otimizador faz (por categoria)
 
@@ -186,7 +166,7 @@ presentes no binário: `System.Net.URLClient`, `TCredentialsStorage`,
   Isto é uma leitura em C do que o binário faz.
 - **Não compila.** Nomes e comentários são inferidos da análise; os endereços
   originais ficam nos comentários para conferência no Ghidra.
-- Cobre as **partes úteis** (login, execução de ajustes, catálogo completo de
+- Cobre as **partes úteis** (execução de ajustes, catálogo completo de
   comandos), não as 18 mil funções — a maior parte é runtime do Delphi (VCL/RTL)
   e código de desenho da interface, que não agregam ao entendimento.
 - **As features do painel não são verificáveis por inteiro.** Os botões do

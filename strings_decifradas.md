@@ -2,6 +2,8 @@
 
 Quase todo texto sensivel do `ReetFPS.exe` (chaves de configuracao, textos dos cards, URLs do servidor) fica cifrado no binario e so existe em claro em tempo de execucao. Este arquivo lista o texto em claro de cada chamada ao decodificador, para que as secoes de `ponto_blank.c` possam citar o texto e nao so o endereco do blob.
 
+> **Nota (login/licenca retirados):** o fluxo de login/autenticacao remota e as validacoes de plano/licenca foram **retirados** da reconstrucao em C (projeto em homologacao, caminho para open source; ver `reetfps.c` e `ponto_blank.c`). As strings marcadas na coluna "Secao / uso" como **`servidor / licenca / login`**, **`limpeza / login`** e **`aviso "plano Basic"`** permanecem listadas apenas como **registro factual do binario original** (inventario completo de 988 strings / 1011 chamadas, com as contagens validadas abaixo). Elas **nao correspondem mais** a nenhuma funcao ou validacao ativa do codigo reconstruido.
+
 ## A cifra do ReetFPS.exe (`FUN_134a8d98` -> `FUN_134a8c90`)
 
 Cada chamada passa ao decodificador o blob cifrado (`EDX`, uma AnsiString com o comprimento no dword anterior), uma chave inicial de 16 bits (`ECX`) e, na pilha, um multiplicador (1o `PUSH`) e um incremento (2o `PUSH`). Para cada byte `c` do blob o decodificador produz `c XOR (k >> 8)` e atualiza `k = ((c + k) * multiplicador + incremento) AND 0xFFFF` -- a cifra de fluxo classica de exemplos Delphi, com chave por chamada. Os dois primeiros caracteres do resultado sao descartados (`FUN_134a8d34`). Exemplo: blob `0x1369e5a0`, chave `0x89`, multiplicador `0xc9`, incremento `0xff` -> `MINIMAP`.

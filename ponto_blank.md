@@ -180,16 +180,18 @@ O motivo do nome não é conhecido.
 `MAPLOADING`, `MINIMAP`, `TELACHEIA`, `KEYBOARD`, `PRIORITYPB`…) fazem a mesma
 coisa:
 
-1. verificam o **plano da licença** — sem plano liberado mostram "O plano
-   Basic não oferece suporte para esse serviço específico… é necessário
-   adquirir o plano Advanced." (`FUN_135fcd18`). Versões anteriores desta
-   documentação diziam "verificam se o jogo está aberto", o que estava errado;
-2. gravam no store JSON de configurações (`FUN_1369b158`) o par
+1. gravam no store JSON de configurações (`FUN_1369b158`) o par
    `<CHAVE> = "ACTIVE"` — por exemplo `MINIMAP`, `LOADINGMAP`, `FULLSCREEN`;
-3. trocam os botões do card;
-4. chamam `vtable[0x188]` de um controle do overlay (**INFERIDO**: setter
+2. trocam os botões do card;
+3. chamam `vtable[0x188]` de um controle do overlay (**INFERIDO**: setter
    `Checked`);
-5. mostram um card de notificação.
+4. mostram um card de notificação.
+
+> **Nota:** o binário original ainda tinha, antes do passo 1, uma **validação
+> de plano/licença** (sem plano liberado, mostrava "O plano Basic não oferece
+> suporte… adquirir o plano Advanced.", `FUN_135fcd18`). Essa checagem foi
+> **retirada** desta reconstrução (projeto em homologação, caminho para open
+> source): os cards agora funcionam sem gate de licença.
 
 Os `*_ONClick` removem a chave. Ao abrir, `FUN_1369beb0` percorre o JSON e
 reaplica cada card ativo (sem mostrar o card). O JSON tem o cabeçalho
@@ -458,7 +460,7 @@ Em linguagem simples (detalhes e endereços na seção 24 do `ponto_blank.c`):
    apaga o rastro em `HKCU\Keyboard Layout\Preload`. Por fim confere se o
    módulo está carregado.
 5. **O `window.ime` não está no disco.** Ele não existe em System32,
-   SysWOW64, Temp nem AppData. **INFERIDO:** vem do servidor após o login.
+   SysWOW64, Temp nem AppData. **INFERIDO:** vem do servidor na inicialização.
 
 Consequência: o que cada feature do painel faz dentro do jogo (minimapa,
 F6, teclado, lobby, FPS, carregamento de mapa) **não pode ser verificado** com

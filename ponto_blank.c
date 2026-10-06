@@ -3,7 +3,7 @@
  * ----------------------------------------------------------------------------
  *  Reconstrucao em C anotada das rotinas do ReetFPS ligadas ao Point Blank
  *  e das funcionalidades anunciadas na tela do programa. Complementa
- *  reetfps.c (login + otimizador do Windows) e o resumo em ponto_blank.md.
+ *  reetfps.c (otimizador do Windows) e o resumo em ponto_blank.md.
  *
  *  O QUE ESTA AQUI (numero da secao -- funcao principal -- o que e comprovado)
  *     1  pb_encontrar_instalacao()        caminhos fixos + drives C..Z ate achar o PB
@@ -200,25 +200,15 @@ extern void vcl_set_text(void *controle, DelphiStr texto);  /* FUN_132ac010 = Se
 extern void config_gravar(void *store, DelphiStr chave, DelphiStr valor); /* FUN_1369b158 */
 extern void config_remover(void *store, DelphiStr chave);                 /* FUN_1369ae6c */
 
-/* Aviso de plano -- FUN_135fcd18 @ 0x135fcd18 (0x135fcd18..0x135fcda6).
- * Atualiza o acesso da licenca (FUN_1354ea18, que consulta
- * https://reetfps.com/acess/user.php?) e, se *PTR_DAT_13810cd8 == 0, abre
- * o dialogo (FUN_13552fac) com o texto decifrado do blob 0x135fcdc0:
- * "O plano Basic nao oferece suporte para esse servico especifico. Para
- *  aproveitar esse recurso, e necessario adquirir o plano Advanced."
- * Versoes anteriores deste arquivo chamavam esta funcao de "jogo nao
- * encontrado" -- errado.                                                  */
-extern void aviso_plano_basic(void);
+/* NOTA: as validacoes de plano/licenca foram RETIRADAS desta reconstrucao
+ * (projeto em homologacao, caminho para open source). O aviso "plano Basic"
+ * (FUN_135fcd18) e as flags de acesso PTR_DAT_13810cd8 / PTR_DAT_13811928 nao
+ * sao mais usados: todas as features do painel rodam sem checagem de licenca. */
 
 /* Globais compartilhadas (cada uma guarda um ponteiro para a variavel real). */
 extern void **PTR_DAT_13811378;  /* contexto do decodificador de strings          */
 extern void **PTR_DAT_13811bac;  /* store de configuracoes (JSON)                 */
 extern void **PTR_DAT_1381110c;  /* form com os controles de overlay (+0x500..)   */
-extern void **PTR_DAT_13810cd8;  /* != 0: plano com acesso (== 0 -> aviso "plano Basic",
-                                    ver aviso_plano_basic); NAO e "jogo em execucao" */
-extern void **PTR_DAT_13811928;  /* segunda flag de acesso, lida so pelos handlers do
-                                    painel, sempre em OR com a anterior (INFERIDO:
-                                    outra forma de licenca liberada)               */
 extern void **PTR_DAT_13811568;  /* objeto de estado usado por secao 15/secao 16            */
 
 
@@ -2262,8 +2252,7 @@ static const wchar_t *const k_mmcss_low_latency[] = {
  *  otimizada" @ 0x136ed2c8, icone "window") e despachado por 0x136f78d0
  *  para o metodo publicado INTERFACEDELAY_OFFClick @ 0x1372d4b8 (par
  *  INTERFACEDELAY_ONClick @ 0x1372d948).  O que 0x1372d4b8 faz:
- *    - se nenhuma flag de plano (PTR_DAT_13810cd8/13811928) esta ligada ->
- *      aviso "plano Basic" (FUN_135fcd18) e sai;
+ *    - (gate de plano/licenca removido -- ver NOTA no topo);
  *    - exibe o controle +0x5dc;
  *    - grava no store JSON INTERFACE = "ACTIVE" (chamadas @ 0x1372d519 /
  *      0x1372d549; blobs 0x1372d7f8 / 0x1372d810) e SET_INTERFACE = "ACTIVE"
@@ -2480,8 +2469,8 @@ void pb_interface_transparencia_religar(uint8_t *painel)
  *  de FUN_136ec13c (ver secao 9/secao 18). O despachante FUN_136f78d0 liga essa chave
  *  a 0x137294d8 = FPSUNLOCKED_OFFClick do TGameBooster (secao 20), que troca os
  *  botoes +0x478/+0x474 do form e chama vtable+0x1cc do objeto em
- *  PTR_DAT_13811880 (INFERIDO: exibe este formulario). Sem plano liberado
- *  chama FUN_135fcd18 (aviso "plano Basic").
+ *  PTR_DAT_13811880 (INFERIDO: exibe este formulario). (No binario original
+ *  havia aqui um gate de plano/licenca, removido -- ver NOTA no topo.)
  *
  *  LEITURA NO INICIO: FUN_13693750 @ 0x13693750 le "FPS_SELECTION_INDEX"
  *  (@ 0x136937e8) do JSON (FUN_1369b8f4), faz Trim (FUN_1316c638) e
@@ -2556,19 +2545,17 @@ int fps_clamp_preset(int index)
 }
 
 /*
- * fps_ao_aplicar_com_acesso  --  FUN_13693d44 @ 0x13693d44
+ * fps_ao_aplicar  --  FUN_13693d44 @ 0x13693d44
  *
- * So age se uma das flags de plano estiver ligada (ver aviso_plano_basic;
- * versoes anteriores diziam "jogo aberto" -- errado).
+ * No binario original so agia se uma das flags de plano estivesse ligada; com
+ * as validacoes de licenca retiradas (ver NOTA no topo), age sempre.
  */
-void fps_ao_aplicar_com_acesso(void)
+void fps_ao_aplicar(void)
 {
-    if (*(int *)PTR_DAT_13810cd8 != 0 || *(int *)PTR_DAT_13811928 != 0) {
-        DAT_1380f724 = 1;
-        /* Consulta a chave L"FPS" (DAT_13693d80) no JSON de configuracoes;
-         * o valor lido e descartado nesta funcao.                            */
-        config_ler(*(void **)PTR_DAT_13811bac, L"FPS");      /* FUN_1369b87c */
-    }
+    DAT_1380f724 = 1;
+    /* Consulta a chave L"FPS" (DAT_13693d80) no JSON de configuracoes;
+     * o valor lido e descartado nesta funcao.                            */
+    config_ler(*(void **)PTR_DAT_13811bac, L"FPS");      /* FUN_1369b87c */
 }
 
 /*
@@ -2660,7 +2647,7 @@ void pb_fps_definir_preset(int index)
 {
     int idx = fps_clamp_preset(index);
 
-    fps_ao_aplicar_com_acesso();
+    fps_ao_aplicar();
 
     if (*(int *)PTR_DAT_1381110c != 0 &&
         *(int *)(*(int *)PTR_DAT_1381110c + 0x4fc) != 0)
@@ -2721,8 +2708,7 @@ void pb_fps_definir_preset(int index)
  *  criado." @ 0x136f7a98.  Chave desconhecida gera excecao (@ 0x136f7c4c).
  *
  *  HANDLER: MAPLOADING_OFFClick @ 0x13728d20 (desmontado)
- *    - sem plano liberado (PTR_DAT_13810cd8/13811928) -> FUN_135fcd18
- *      (aviso "plano Basic") e sai;
+ *    - (gate de plano/licenca removido -- ver NOTA no topo);
  *    - oculta +0x4e0, exibe +0x4dc;
  *    - vtable[0x188](*(*PTR_DAT_1381110c + 0x4b0), 1);
  *    - grava no store JSON LOADINGMAP = "ACTIVE" -- FUN_1369b158; chave do
@@ -2768,10 +2754,7 @@ void pb_loadingmap_ativar(uint8_t *booster, int mostrar_card)
 {
     DelphiStr tmp = NULL, chave = NULL, valor = NULL;
 
-    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
-        aviso_plano_basic();                                /* FUN_135fcd18 */
-        return;
-    }
+    /* Gate de plano/licenca removido (ver NOTA no topo). */
 
     vcl_set_visible(*(void **)(booster + 0x4e0), 0);
     vcl_set_visible(*(void **)(booster + 0x4dc), 1);
@@ -2820,8 +2803,7 @@ void pb_loadingmap_ativar(uint8_t *booster, int mostrar_card)
  *  cair no botao MINIMAP nao e conhecido.
  *
  *  O QUE MINIMAP_OFFClick FAZ (desmontado, sem funcao no Ghidra):
- *    1. Se as flags de plano (PTR_DAT_13810cd8 e PTR_DAT_13811928) estao
- *       zeradas chama FUN_135fcd18 (aviso "plano Basic") e sai.
+ *    1. (gate de plano/licenca removido -- ver NOTA no topo.)
  *    2. Grava no store JSON (FUN_1369b158) MINIMAP = "ACTIVE" (chave do
  *       blob 0x137292f0, chamada @ 0x13729116; valor do blob 0x137292d8,
  *       chamada @ 0x137290e9).
@@ -2995,10 +2977,7 @@ void pb_minimap_off_ativar(uint8_t *booster, int mostrar_card)
 {
     DelphiStr tmp = NULL, chave = NULL, valor = NULL;
 
-    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
-        aviso_plano_basic();                                /* FUN_135fcd18 */
-        return;
-    }
+    /* Gate de plano/licenca removido (ver NOTA no topo). */
 
     decodificar_string(*PTR_DAT_13811378, (void *)0x137292d8, 0xb8, &tmp, 0x15, 5);
     str_converter(&valor, tmp);                               /* FUN_1314c690 */
@@ -3067,9 +3046,7 @@ void pb_minimap_off_desfazer(uint8_t *booster)
  *    Clicar em "_ON" DESLIGA.
  *
  *  LIGAR  (FPSUNLOCKED_OFFClick @ 0x137294d8)
- *    1. Pre-condicao: *PTR_DAT_13810cd8 != 0 ou *PTR_DAT_13811928 != 0
- *       (flags de plano); senao chama FUN_135fcd18 (aviso "plano Basic",
- *       blob DAT_135fcdc0) e sai.
+ *    1. (gate de plano/licenca removido -- ver NOTA no topo.)
  *    2. Oculta FPSUNLOCKED_OFF e exibe FPSUNLOCKED_ON (FUN_132abec4 =
  *       TControl.SetVisible: grava +0x69 e envia CM_VISIBLECHANGED 0xB00B).
  *    3. Chama o metodo virtual +0x1cc do formulario em *PTR_DAT_13811880.
@@ -3104,8 +3081,8 @@ void pb_minimap_off_desfazer(uint8_t *booster)
  *    escreve no processo do Point Blank.
  */
 
-/* Auxiliares desta secao.  decodificar_string, config_remover,
- * vcl_set_visible e aviso_plano_basic: AUXILIARES COMPARTILHADOS.
+/* Auxiliares desta secao.  decodificar_string, config_remover e
+ * vcl_set_visible: AUXILIARES COMPARTILHADOS.
  * trackbar_set_posicao (FUN_132db2e0), lista_item e item_set_texto
  * (FUN_13575414/FUN_135750f8, FUN_13574f7c): declarados no secao 17.            */
 extern void **PTR_DAT_13811880;   /* form aberto pelo botao FPSUNLOCKED_OFF   */
@@ -3139,10 +3116,7 @@ static void fps_desbloqueio_ocultar_rotulos(void)
 /* FPSUNLOCKED_OFFClick @ 0x137294d8  -- liga */
 void pb_desbloqueador_fps_ativar(uint8_t *booster)
 {
-    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
-        aviso_plano_basic();              /* FUN_135fcd18 ("plano Basic", DAT_135fcdc0) */
-        return;
-    }
+    /* Gate de plano/licenca removido (ver NOTA no topo). */
 
     vcl_set_visible(*(void **)(booster + 0x478), 0);    /* oculta FPSUNLOCKED_OFF */
     vcl_set_visible(*(void **)(booster + 0x474), 1);    /* exibe  FPSUNLOCKED_ON  */
@@ -3380,9 +3354,8 @@ void pb_resetar_miras(void)
  *       entre o jogo e outros aplicativos, desfrutar de maior estabilidade e
  *       realizar multitarefas sem interrupcoes."  -- tela cheia e borderless
  *       sao mutuamente exclusivos.
- *    3. Sem plano liberado (PTR_DAT_13810cd8 e PTR_DAT_13811928 zerados):
- *       FUN_135fcd18() (aviso "plano Basic") e sai.
- *    4. Senao: oculta Self+0x4a0, exibe Self+0x49c,
+ *    3. (gate de plano/licenca removido -- ver NOTA no topo.)
+ *    4. Oculta Self+0x4a0, exibe Self+0x49c,
  *       vtable[0x188](*(mgr+0x49c), 1), grava no store JSON
  *       FULLSCREEN = "ACTIVE" (chave blob 0x1372e240, chamada @ 0x1372e080;
  *       valor blob 0x1372e228, chamada @ 0x1372e053) e, se mostrar_card,
@@ -3424,10 +3397,7 @@ void pb_fullscreen_ativar(uint8_t *booster, int mostrar_card)
     form_grade_selecionar(booster, 1, 3, 0, 0);               /* PUSH 0; PUSH 0 */
     form_desligar_opcao_concorrente(booster, 0);
 
-    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
-        aviso_plano_basic();                                /* FUN_135fcd18 */
-        return;
-    }
+    /* Gate de plano/licenca removido (ver NOTA no topo). */
 
     vcl_set_visible(*(void **)(booster + 0x4a0), 0);
     vcl_set_visible(*(void **)(booster + 0x49c), 1);
@@ -3702,8 +3672,8 @@ void gpu_nvidiaboost_aplicar(void)
  *    jogo esta num terceiro modulo, window.ime, que nao existe no disco.
  *
  *  1) ReetFPS.exe -- carregador web  (unit uWebLoader)
- *    - FUN_13714d2c (0x13714d2c..0x1371523f, vizinha das rotinas de login;
- *      INFERIDO: etapa pos-login) chama (@ 0x137150e8) FUN_136e7958 =
+ *    - FUN_13714d2c (0x13714d2c..0x1371523f; etapa de inicializacao) chama
+ *      (@ 0x137150e8) FUN_136e7958 =
  *      cLoadLibrary.Initialize ($ActRec @ 0x136e783b), que dispara uma
  *      tarefa assincrona (TTask, FUN_13498880).
  *    - O corpo dessa tarefa (codigo @ 0x136e75a9..0x136e7643, sem funcao
@@ -3776,7 +3746,7 @@ void gpu_nvidiaboost_aplicar(void)
  *  3) window.ime  -- O MODULO DAS FEATURES (AUSENTE)
  *    Nao existe em System32, SysWOW64, Temp nem AppData (verificado) e nao
  *    apareceu entre as imagens PE embutidas no ReetFPS.exe na pesquisa.
- *    INFERIDO: e baixado do servidor apos o login, como a DLL.  As chaves do painel (MINIMAP, LOADINGMAP, FULLSCREEN,
+ *    INFERIDO: e baixado do servidor na inicializacao, como a DLL.  As chaves do painel (MINIMAP, LOADINGMAP, FULLSCREEN,
  *    KEYBOARD, SET_INTERFACE, PRIORITYPB, FPS_SELECTION_INDEX, COUNTERPING,
  *    FPSCOUNTER, HUDPLAYERS, REETSTATS, crosshair*, ...) e o JSON
  *    sincronizado com o servidor sao o unico contrato visivel entre o
