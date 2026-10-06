@@ -2015,10 +2015,33 @@ void pb_interface_sem_delay_restaurar(void)
  *  chama vtable+0x1cc do objeto em PTR_DAT_13811880 (INFERIDO: exibe este
  *  formulario). Sem o jogo aberto chama FUN_135fcd18.
  *
- *  ONDE O FPS CHEGA AO JOGO: NAO LOCALIZADO. O TRPPBConfig (§19) tem as
- *  chaves INI "FPSType" @ 0x13584f38 e "FPSVal" @ 0x13584f54, mas nenhuma
- *  ligacao entre elas e FPS_SELECTION_INDEX foi comprovada.
+ *  LEITURA NO INICIO: FUN_13693750 @ 0x13693750 le "FPS_SELECTION_INDEX"
+ *  (@ 0x136937e8) do JSON (FUN_1369b8f4), faz Trim (FUN_1316c638) e
+ *  TryStrToInt (FUN_1316d204); se nao houver valor, usa 3.
+ *
+ *  ONDE O FPS CHEGA AO JOGO: NAO LOCALIZADO. O TRPPBConfig (§19) grava a
+ *  secao [Graphics] ("Graphics" @ 0x1358595c) de
+ *  <pasta do jogo>\EnvSet\env_settings.ini (@ 0x13584570) em FUN_13585130;
+ *  ali FPSType vem do campo +0x51c (chave @ 0x13585acc) e FPSVal do campo
+ *  +0x520 (chave @ 0x13585ae8). Nenhuma escrita nesses campos a partir do
+ *  indice FPS_SELECTION_INDEX foi encontrada: o global _DAT_1380f72c so e
+ *  acessado pelo proprio form, e os acessos a +0x51c perto de 0x1372b36d /
+ *  0x1372b6ce sao toggles do form principal, nao do TRPPBConfig.
  */
+
+/*
+ * fps_ler_indice_salvo  --  FUN_13693750 @ 0x13693750
+ */
+void fps_ler_indice_salvo(int *out)
+{
+    DelphiStr s = NULL, t = NULL;
+    *out = 3;
+    config_ler_str(*(void **)PTR_DAT_13811bac,
+                   L"FPS_SELECTION_INDEX", &s);                /* FUN_1369b8f4 */
+    trim(s, &t);                                               /* FUN_1316c638 */
+    if (t != NULL)
+        trystrtoint(t, out);                                   /* FUN_1316d204 */
+}
 
 /*
  * fps_clamp_preset  --  FUN_13693740 @ 0x13693740
@@ -2163,6 +2186,9 @@ void pb_fps_definir_preset(int index)
 /* Prototipos desta secao. */
 extern void  config_ler(void *cfg, const wchar_t *chave);                 /* FUN_1369b87c */
 extern void  config_gravar(void *cfg, const wchar_t *chave, DelphiStr v); /* FUN_1369b158 */
+extern void  config_ler_str(void *cfg, const wchar_t *chave, DelphiStr *v); /* FUN_1369b8f4 */
+extern void  trim(DelphiStr s, DelphiStr *dst);                           /* FUN_1316c638 */
+extern bool  trystrtoint(DelphiStr s, int *v);                            /* FUN_1316d204 */
 extern void  inttostr(int v, DelphiStr *dst);                             /* FUN_1316cf60 */
 extern void  fpslimit_set_indice(void *controle, int idx);                /* FUN_1369190c */
 extern void  trackbar_set_posicao(void *controle, int pos);               /* FUN_132db2e0 */
