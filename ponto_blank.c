@@ -2263,147 +2263,157 @@ extern void executar_cmd(const char *linha);
 extern void executar_itens_habilitados(int painel);  /* FUN_137008d0 */
 
 
-/* ============================================================================
- *  §19  MINI-MAP OFF
- * ==============================================================================
+/* ===========================================================================
+ *  19) MINI-MAP OFF
+ * ===========================================================================
  *
- *  O que o ReetFPS faz
- *  -------------------
- *  Modifica diretamente o arquivo de configuracao do Point Blank para desativar
- *  o indicador de missao (mini-mapa) e os efeitos de HUD. Isso reduz o volume
- *  de elementos desenhados no HUD a cada frame, o que diminui a carga de
- *  renderizacao e elimina distracao visual durante a partida.
+ *  MECANISMO NAO LOCALIZADO NO BINARIO.
  *
- *  Mecanismo
- *  ---------
- *  O binario contem a classe `TRPPBConfig` (unidade `uRPPBConfig`, RTTI em
- *  0x13582628). Ela le e grava o arquivo de configuracao do jogo usando pares
- *  chave/valor em formato INI (UTF-16LE). As duas chaves relevantes para o
- *  mini-mapa sao:
+ *  O nome "MINI-MAP OFF" vem da lista de funcionalidades anunciadas; ele
+ *  NAO aparece como string no executavel (busca por "mini", "minimap",
+ *  "radar", "mapa" e "missao": nenhum resultado relevante).  Tambem nao
+ *  existe chave de item de perfil para ele: o despachante de itens do
+ *  PointBlank (codigo em 0x136f78d0, ver abaixo) conhece apenas
+ *  FLUIDEZMAX/FLUIDEZMAXIMA, FULLSCREEN, OPTIMIZER_PB_MANAGER,
+ *  FPS_SELECTION_INDEX, PRIORITYPB, LOADINGMAP, INTERFACE e REETGAMEMODE.
  *
- *      HUD_Effect             (offset 0x34 no objeto, config key @ 0x13584ce4)
- *      Enable_MissionIndicator (config key @ 0x13584d08)
+ *  O unico vestigio literal e o nome de icone "map-off" @ 0x13441d9c, que
+ *  fica numa tabela de icones (nome -> caminho SVG, ao lado de "fullscreen"
+ *  @ 0x13441d18).  Isso prova que a UI tem um icone de "mapa desligado", nao
+ *  qual codigo ele dispara.
  *
- *  Ambas aparecem uma segunda vez na tabela de escrita em 0x13585878 e
- *  0x1358589c, respectivamente. Quando TRPPBConfig.ApplyConfig e chamado com
- *  HUDEffect=0 e MissionIndicator=0, ele sobrescreve essas chaves no arquivo
- *  de opcoes do jogo.
+ *  O que esta comprovado e a classe que o ReetFPS usa para ler e gravar o
+ *  arquivo de configuracao do jogo, TRPPBConfig.  Ela contem a chave
+ *  [Game] Enable_MissionIndicator, que e a candidata mais provavel para um
+ *  "mini-mapa off" -- mas nenhum trecho encontrado grava essa chave com 0.
  *
- *  O perfil e registrado como item `OPTIMIZER_PB_MANAGER` no despacho de
- *  perfis (tabela de strings em 0x136f7b50) e e aplicado via
- *  `FUN_13600598` (@ 0x13600598), que cria um contexto TRPPBConfig e invoca
- *  `FUN_135c52bc` (@ 0x135c52bc) para executar a escrita no arquivo do jogo.
+ *  CLASSE TRPPBConfig  (unidade uRPPBConfig)
+ *    TypeInfo  @ 0x13582610  (tkClass, nome "TRPPBConfig")
+ *    VMT       @ 0x135818e0
+ *    52 propriedades publicadas; a tabela de propriedades comeca em ~0x13582640
  *
- *  A notificacao de conclusao (card ReetFPS) e disparada por
- *  `FUN_1358027c` com o texto em `DAT_1360069c`.
+ *    Carregar : FUN_135845f4 @ 0x135845f4   (le todas as chaves do .ini)
+ *    Salvar   : FUN_13585130 @ 0x13585130   (grava todas as chaves no .ini)
+ *    Caminho  : FUN_1358450c @ 0x1358450c   -> <pasta do jogo> +
+ *               "EnvSet\env_settings.ini"
+ *               (a pasta vem de FUN_13584484)
  *
- *  Campos da classe TRPPBConfig relevantes para o mini-mapa
- *  ---------------------------------------------------------
- *      Indice 40  HUDEffect           -- efeitos de HUD  (offset 0x34)
- *      Chave INI: HUD_Effect          -- escrita no arquivo do jogo
- *      Chave INI: Enable_MissionIndicator -- indicador de missao (mini-mapa)
+ *  CHAVES DO env_settings.ini, na ordem em que FUN_135845f4 as le
+ *  (offset do campo no objeto TRPPBConfig; padrao usado na leitura quando
+ *   o valor nao existe no arquivo)
  *
- *  Tabela completa de chaves INI lidas/escritas pela classe (das strings
- *  UTF-16LE em 0x13584c00 / 0x13585840):
- *      ScreenMode, Graphics, ScreenWidth, ScreenHeight, RefreshRate,
- *      AntiAlias, ShadowQualityType, TextureQualityType, SpecularQualityType,
- *      EffectQuality, FPSType, FPSValor, Gamma, FovValue, VSync, TriLinear,
- *      DynamicLight, EnableNormalMap, EnableTerrainEffect, HDR, DX11,
- *      RimLight, IBL, SSAO, SSR, EnablePhysX, Game, TeamBand,
- *      DisableAccessory, WeaponEffect, HUD_Effect, Enable_MissionIndicator,
- *      EnableBulletTrace, EnableBulletSmoke
+ *    [Default]  DXVersion               +0x4f4  int
+ *    [Game]     EnablePhysX             +0x531  bool
+ *               TeamBand                +0x536  bool  padrao 1
+ *               DisableAccessory        +0x537  bool  padrao 0
+ *               WeaponEffect            +0x532  bool  padrao 0
+ *               HUD_Effect              +0x533  bool  padrao 0
+ *               Enable_MissionIndicator +0x538  bool  padrao 1
+ *               EnableBulletTrace       +0x534  bool  padrao 1
+ *               EnableBulletSmoke       +0x535  bool  padrao 1
+ *    [Graphics] ScreenMode              +0x4f8  int
+ *               ScreenWidth             +0x4fc  int
+ *               ScreenHeight            +0x500  int
+ *               RefreshRate             +0x504  int
+ *               AntiAlias               +0x508  int
+ *               ShadowQualityType       +0x50c  int
+ *               TextureQualityType      +0x510  int
+ *               SpecularQualityType     +0x514  int
+ *               EffectQuality           +0x518  int
+ *               FPSType                 +0x51c  int
+ *               FPSVal                  +0x520  int
+ *               GammaVal                +0x524  float
+ *               FovValue                +0x528  float
+ *               VSync                   +0x52c  bool
+ *               TriLinearFilter         +0x52d  bool
+ *               DynamicLight            +0x52e  bool
+ *               EnableNormalMap         +0x52f  bool
+ *               EnableTerrainEffect     +0x530  bool
+ *    [DX11]     HDR                     +0x539  bool
+ *               RimLight                +0x53a  bool
+ *               IBL                     +0x53b  bool
+ *               SSAO                    +0x53c  bool
+ *               SSR                     +0x53d  bool
+ *
+ *  Os offsets conferem com a tabela RTTI de propriedades: cada entrada tem
+ *  GetProc/SetProc = 0xFF000000 | offset (acesso direto ao campo), por
+ *  exemplo ScreenMode = 0xff0004f8 e HUDEffect = 0xff000533.  As chaves
+ *  TeamBand, DisableAccessory e Enable_MissionIndicator sao lidas e gravadas
+ *  no .ini, mas NAO sao propriedades publicadas (nao aparecem na RTTI).
+ *
+ *  NAO CONFUNDIR: FUN_13600598 @ 0x13600598 nao tem relacao com esta classe.
+ *  Ela enfileira LAB_135bc7e8 no worker generico FUN_135c52bc e mostra o
+ *  card "Iniciando verificacao e reparacao do sistema..." (DAT_1360069c),
+ *  ou seja, e o REPARO DO SISTEMA.
  */
+
+/* Campos de TRPPBConfig usados abaixo (offsets comprovados acima).          */
+#define PBCFG_SCREENMODE           0x4f8
+#define PBCFG_HUD_EFFECT           0x533
+#define PBCFG_MISSION_INDICATOR    0x538
+
+/* Metodos da instancia de TIniFile criada por FUN_132655fc(&PTR_LAB_13264f44,
+ * 1, caminho).  Chamados via vtable: +0x10 le inteiro, +0x34 le float,
+ * +0x0c grava string, +0x14 grava inteiro.  Booleanos passam por
+ * FUN_13582d40 (leitura) e FUN_135845a0 (bool -> texto) na gravacao.      */
+extern void *ini_criar(DelphiStr caminho);                 /* FUN_132655fc */
+extern void  ini_liberar(void *ini);                       /* FUN_13149ad8 */
+extern int   ini_ler_int (void *ini, const wchar_t *sec, const wchar_t *chave, int padrao);
+extern bool  ini_ler_bool(void *ini, const wchar_t *sec, const wchar_t *chave, bool padrao); /* FUN_13582d40 */
+extern void  ini_gravar_int (void *ini, const wchar_t *sec, const wchar_t *chave, int valor);
+extern void  ini_gravar_bool(void *ini, const wchar_t *sec, const wchar_t *chave, bool valor);
+extern void  pbconfig_caminho_ini(void *cfg, DelphiStr *dst); /* FUN_1358450c */
 
 /*
- * pb_pbconfig_gravar_minimap_off
+ * pbconfig_carregar  --  FUN_135845f4 @ 0x135845f4
  *
- * Cria uma instancia de TRPPBConfig, define os campos de HUD e indicador
- * de missao como desativados (0) e persiste no arquivo de configuracao do
- * Point Blank via ApplyConfig.
- *
- * Enderecos-chave:
- *   TRPPBConfig RTTI         0x13582628  (uRPPBConfig)
- *   Tabela de chaves INI #1  0x13584c00  (leitura)
- *   Tabela de chaves INI #2  0x13585840  (escrita)
- *   HUD_Effect key           0x13584ce4 / 0x13585878
- *   Enable_MissionIndicator  0x13584d08 / 0x1358589c
- *   FUN_13600598             handler OPTIMIZER_PB_MANAGER
- *   FUN_135c52bc             enfileirador do ApplyConfig
- *   FUN_135bcaec             corpo do worker de verificacao/reparo
+ * Trecho reconstruido: so as chaves relevantes para §19 e §22.  A funcao
+ * original le as 34 chaves da tabela acima, na mesma ordem.
  */
-static void pb_pbconfig_gravar_minimap_off(void *pb_config_obj)
+void pbconfig_carregar(uint8_t *cfg)
 {
-    /*
-     * TRPPBConfig.HUDEffect (offset 0x34) = 0
-     *   Chave INI: HUD_Effect
-     *   Efeito: desativa todos os efeitos de HUD (contadores, indicadores,
-     *           marcadores de time) durante a renderizacao do frame.
-     */
-    *(unsigned char *)((unsigned char *)pb_config_obj + 0x34) = 0;   /* HUDEffect = 0 */
+    DelphiStr caminho = NULL;
+    pbconfig_caminho_ini(cfg, &caminho);   /* ...\EnvSet\env_settings.ini */
+    void *ini = ini_criar(caminho);
 
-    /*
-     * TRPPBConfig.Enable_MissionIndicator (chave INI direta) = 0
-     *   Efeito: oculta o mini-mapa/radar de missao na tela do jogo.
-     *   O campo e uma chave INI sem offset fixo identificado no RTTI; ele e
-     *   gravado pela mesma rotina de escrita de config que usa a tabela em
-     *   0x13585840.
-     */
+    *(bool *)(cfg + PBCFG_HUD_EFFECT) =
+        ini_ler_bool(ini, L"Game", L"HUD_Effect", false);
+    *(bool *)(cfg + PBCFG_MISSION_INDICATOR) =
+        ini_ler_bool(ini, L"Game", L"Enable_MissionIndicator", true);
+    *(int *)(cfg + PBCFG_SCREENMODE) =
+        ini_ler_int(ini, L"Graphics", L"ScreenMode",
+                    *(int *)(cfg + PBCFG_SCREENMODE));
+    /* ... demais chaves ... */
 
-    /*
-     * FUN_135c52bc @ 0x135c52bc -- enfileira a escrita do config no jogo.
-     * Internamente:
-     *   1. Cria contexto com objeto TRPPBConfig configurado acima.
-     *   2. Verifica se o caminho do jogo e valido (FUN_135c5498).
-     *   3. Serializa os campos para o arquivo INI do Point Blank.
-     *   4. Dispara notificacao via FUN_1358027c se param_show_card != 0.
-     */
-    pbconfig_aplicar_config(pb_config_obj, /*show_card=*/1);   /* FUN_135c52bc */
+    ini_liberar(ini);
 }
 
 /*
- * pb_minimap_off_ativar  --  ponto de entrada do MINI-MAP OFF
+ * pbconfig_salvar  --  FUN_13585130 @ 0x13585130
  *
- * Cria a instancia de TRPPBConfig (via FUN_13149aa8), configura os campos
- * de HUD e mini-mapa para zero e chama o worker de escrita.
- * Em seguida exibe o card de notificacao "MINI-MAP desativado!".
- *
- * Entrada no despacho de perfis: item `OPTIMIZER_PB_MANAGER`
- *   -- tabela em 0x136f7b50, handler em FUN_13600598 @ 0x13600598
+ * Grava os campos de volta no env_settings.ini (mesma ordem da leitura).
  */
-void pb_minimap_off_ativar(void)
+void pbconfig_salvar(uint8_t *cfg)
 {
-    /* Cria instancia de TRPPBConfig (Delphi TObject.Create).                */
-    void *cfg = pbconfig_criar();         /* FUN_13149aa8(&DAT_136003e4, 1)  */
+    DelphiStr caminho = NULL;
+    pbconfig_caminho_ini(cfg, &caminho);
+    void *ini = ini_criar(caminho);
 
-    /*
-     * Define os dois campos que controlam o mini-mapa:
-     *   HUD_Effect            = 0  (sem efeitos de HUD)
-     *   Enable_MissionIndicator = 0 (sem indicador de missao / mini-mapa)
-     */
-    pb_pbconfig_gravar_minimap_off(cfg);
+    ini_gravar_bool(ini, L"Game", L"HUD_Effect",
+                    *(bool *)(cfg + PBCFG_HUD_EFFECT));
+    ini_gravar_bool(ini, L"Game", L"Enable_MissionIndicator",
+                    *(bool *)(cfg + PBCFG_MISSION_INDICATOR));
+    ini_gravar_int (ini, L"Graphics", L"ScreenMode",
+                    *(int *)(cfg + PBCFG_SCREENMODE));
+    /* ... demais chaves ... */
 
-    /*
-     * Notificacao ao usuario via card ReetFPS.
-     * Texto em DAT_1360069c: "Iniciando verificacao e reparacao..."
-     * (o mesmo card usado pelo OPTIMIZER_PB_MANAGER geral).
-     * FUN_1358027c @ 0x1358027c
-     */
-    notificar_card(L"ReetFPS",
-                   L"MINI-MAP desativado! HUD_Effect e Enable_MissionIndicator = 0 "
-                   L"gravados no arquivo de configuracao do PointBlank.",
-                   6000, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
-                   L"icon.png", 0xffffffff, 0xffffffff, 0xffffffff, 1, 1, 1);
+    ini_liberar(ini);
 }
 
-/* Externs desta secao.                                                       */
-extern void *pbconfig_criar(void);           /* FUN_13149aa8(&DAT_136003e4,1) */
-extern void  pbconfig_aplicar_config(void *cfg, int show_card); /* FUN_135c52bc */
-extern void  notificar_card(const wchar_t *titulo, const wchar_t *corpo,
-                            int duracao_ms,
-                            int p1, int p2, int p3, int p4, int p5, int p6,
-                            const wchar_t *icone,
-                            int cor1, int cor2, int cor3,
-                            int flag1, int flag2, int flag3); /* FUN_1358027c */
+/* INFERIDO: se o "MINI-MAP OFF" existe como acao do ReetFPS, o caminho mais
+ * provavel e carregar o TRPPBConfig, zerar Enable_MissionIndicator (+0x538)
+ * e salvar.  Nenhum codigo que faca essa escrita foi localizado; por isso
+ * nao ha funcao pb_minimap_off_ativar() nesta reconstrucao.                 */
 
 
 /* ===========================================================================
@@ -2676,113 +2686,103 @@ extern int  *PTR_DAT_13811bac;  /* barra de status                        */
  *  22) FULL SCREEN
  * ===========================================================================
  *
- *  Forca o modo tela cheia exclusivo do Point Blank gravando ScreenMode=1
- *  no arquivo de configuracao do jogo via TRPPBConfig.  Usar tela cheia
- *  exclusiva reduz a carga do compositor DWM e elimina a latencia de frame
- *  introduzida pelo modo janela ou tela cheia sem bordas.
+ *  Item de perfil "FULLSCREEN" da lista de recomendacoes do PointBlank.
  *
- *  Mecanismo
- *  ---------
- *  FULLSCREEN e um item de perfil registrado no painel MAPAS INSTANTANEOS
- *  (FUN_136ec13c @ 0x136ec13c -- ver §18).  Quando habilitado, o mecanismo
- *  generico de despacho (FUN_137008d0, ver §18) passa a chave "FULLSCREEN"
- *  ao worker de configuracao do jogo, que usa a mesma TRPPBConfig usada
- *  pelo MINI-MAP OFF (§19).
+ *  STRINGS
+ *    "FULLSCREEN"            @ 0x136ece9c  (chave na lista de recomendacoes)
+ *    "Tela cheia otimizada"  @ 0x136ecfb4  (rotulo do item)
+ *    "fullscreen"            @ 0x136ecf90  (nome do icone do item)
+ *    "FULLSCREEN"            @ 0x136f7b2c  (literal comparado pelo despachante)
  *
- *  TRPPBConfig.ScreenMode e o PRIMEIRO campo gravado na tabela de escrita
- *  (@ 0x13585938).  A tabela de leitura correspondente esta em 0x13584da4.
- *  Valores:
- *      ScreenMode = 0  ->  modo janela
- *      ScreenMode = 1  ->  tela cheia exclusiva  (este item)
+ *  DESPACHANTE DE ITENS DO POINTBLANK  (codigo em 0x136f78d0, sem funcao
+ *  criada no Ghidra)
+ *    Compara o nome do item (FUN_1316c388) com cada literal e chama o
+ *    metodo correspondente do formulario principal (*PTR_DAT_13810970)
+ *    atraves de FUN_136f782c.  Se o formulario nao existe, levanta
+ *    "Handler da otimizacao do PointBlank nao atribuido."; se o nome nao
+ *    casa com nenhum literal, levanta uma excecao com a mensagem em
+ *    0x136f7c4c.
  *
- *  O handler final e FUN_13600598 (OPTIMIZER_PB_MANAGER @ 0x13600598) que:
- *    1. Cria TRPPBConfig via FUN_13149aa8(&DAT_136003e4, 1)
- *    2. Verifica se o caminho do jogo e valido (FUN_135c5498)
- *    3. Chama FUN_135c52bc para enfileirar a escrita
- *    4. Exibe notificacao via FUN_1358027c (texto @ DAT_1360069c)
+ *      "FLUIDEZMAX" / "FLUIDEZMAXIMA"  -> 0x1372a03c
+ *      "FULLSCREEN"                    -> 0x1372dfb0   (esta secao)
+ *      "OPTIMIZER_PB_MANAGER"          -> 0x13729094
+ *      "FPS_SELECTION_INDEX"           -> 0x137294d8
+ *      "PRIORITYPB"                    -> 0x1372e888
+ *      "LOADINGMAP"                    -> 0x13728d20
+ *      "INTERFACE"                     -> 0x1372d4b8
+ *      "REETGAMEMODE"                  -> 0x1372c00c
  *
- *  STRINGS DE UI
- *    "FULLSCREEN"               @ 0x136ece9c  (chave do item de perfil)
- *    "Tela cheia otimizada"     @ 0x136ecfb4  (label do item no painel)
- *    "fullscreen"               @ 0x136ecf90  (icone do item)
- *    "Aplica o modo tela cheia recomendado para reduzir interferencias
- *     visuais e melhorar estabilidade."
- *                               @ 0x136ecec0  (descricao do item)
+ *  HANDLER: FUN_1372dfb0 @ 0x1372dfb0  (form, mostrar_card)
+ *    1. FUN_13727540(form, 1, 3): seleciona linha 1, coluna 3 da grade
+ *       de opcoes do formulario (form+0x5f8).
+ *    2. FUN_1372e7bc(form, 0): desliga a opcao concorrente -- apaga a sua
+ *       chave de configuracao (FUN_1369ae6c), troca os botoes
+ *       form+0x4f0 (exibe) / form+0x4ec (oculta) e chama
+ *       vtable[0x188](*(mgr+0x514), 0).
+ *    3. Se o jogo nao esta aberto (PTR_DAT_13810cd8 e PTR_DAT_13811928
+ *       zerados): FUN_135fcd18() e sai.
+ *    4. Senao: oculta form+0x4a0, exibe form+0x49c,
+ *       vtable[0x188](*(mgr+0x49c), 1), grava a configuracao via
+ *       FUN_1369b158(*PTR_DAT_13811bac, chave, valor) e, se mostrar_card,
+ *       exibe o card com FUN_1358027c(..., 0x1194).
+ *    mgr = *PTR_DAT_1381110c.  Chave, valor e textos do card sao strings
+ *    ofuscadas, decodificadas em tempo de execucao por FUN_134a8d98
+ *    (blobs DAT_1372e228, DAT_1372e240, DAT_1372e25c, DAT_1372e274,
+ *    DAT_1372e2a8, DAT_1372e2f8); por isso nao estao citadas aqui.
  *
- *  ESTADO PERSISTIDO
- *    HKCU\Keyboard Layout\ReetFPS\FULLSCREEN  @ 0x136f7b2c
- *
- *  CHAVES INI DO TRPPBConfig  (tabela de escrita @ 0x13585938)
- *    ScreenMode           -- offset 0 no objeto (primeiro campo)
- *    Graphics             -- segundo campo
- *    (ver §19 para a lista completa de 34 chaves)
- *
- *  FUNCOES
- *    FUN_136ec13c @ 0x136ec13c  -- panel init; registra o item FULLSCREEN
- *    FUN_137008d0 @ 0x137008d0  -- despachante generico de perfil (ver §18)
- *    FUN_13600598 @ 0x13600598  -- handler OPTIMIZER_PB_MANAGER
- *    FUN_135c52bc @ 0x135c52bc  -- TRPPBConfig.ApplyConfig (enfileirador)
- *    TRPPBConfig RTTI           @ 0x13582628  (uRPPBConfig)
+ *  O QUE NAO FOI COMPROVADO
+ *    Nenhum trecho do handler toca o TRPPBConfig (§19) nem a chave
+ *    [Graphics] ScreenMode (+0x4f8) do env_settings.ini.  Se a tela cheia
+ *    e aplicada gravando ScreenMode, isso acontece em outro ponto (por
+ *    exemplo ao iniciar o jogo) que nao foi localizado.  O significado de
+ *    vtable[0x188] nos objetos mgr+0x49c / mgr+0x514 tambem nao foi
+ *    identificado (pode ser apenas um setter de controle da UI).
  */
+
+extern void form_grade_selecionar(void *form, int linha, int coluna); /* FUN_13727540 */
+extern void form_desligar_opcao_concorrente(void *form, int card);    /* FUN_1372e7bc */
+extern void jogo_nao_encontrado(void);                                /* FUN_135fcd18 */
+extern void ui_set_visivel(void *controle, int visivel);              /* FUN_132abec4 */
+extern void config_gravar(void *settings, DelphiStr chave, DelphiStr valor); /* FUN_1369b158 */
+extern int *PTR_DAT_1381110c;   /* mgr */
+extern int *PTR_DAT_13810cd8;   /* jogo em execucao (1a verificacao) */
+extern int *PTR_DAT_13811928;   /* jogo em execucao (2a verificacao) */
+extern int *PTR_DAT_13811bac;   /* objeto de configuracoes do ReetFPS */
 
 /*
- * pb_fullscreen_ativar  --  ativa o modo tela cheia exclusivo do PB
- *
- * Cria uma instancia de TRPPBConfig, define ScreenMode=1 e persiste via
- * ApplyConfig (FUN_135c52bc).  O fluxo e identico ao MINI-MAP OFF (§19)
- * mas grava no campo ScreenMode em vez de HUDEffect.
- *
- * Enderecos-chave:
- *   TRPPBConfig RTTI         0x13582628  (unidade uRPPBConfig)
- *   Construtor               FUN_13149aa8(&DAT_136003e4, 1)
- *   ScreenMode (write table) 0x13585938  (primeiro campo gravado)
- *   ScreenMode (read  table) 0x13584da4
- *   FUN_13600598             handler OPTIMIZER_PB_MANAGER
- *   FUN_135c52bc             enfileirador ApplyConfig
- *   FULLSCREEN state key     0x136f7b2c  (HKCU\...\ReetFPS\FULLSCREEN)
+ * pb_fullscreen_ativar  --  FUN_1372dfb0 @ 0x1372dfb0
  */
-void pb_fullscreen_ativar(void)
+void pb_fullscreen_ativar(uint8_t *form, int mostrar_card)
 {
-    void *cfg = pbconfig_criar();   /* FUN_13149aa8(&DAT_136003e4, 1)         */
+    form_grade_selecionar(form, 1, 3);
+    form_desligar_opcao_concorrente(form, 0);
 
-    /*
-     * TRPPBConfig.ScreenMode = 1  (tela cheia exclusiva)
-     *
-     * ScreenMode e o primeiro campo na tabela de escrita (0x13585938).
-     * O offset exato no objeto nao foi isolado diretamente, mas o campo
-     * precede "Graphics" na tabela e e o primeiro item escrito pelo worker.
-     */
-    *(unsigned char *)((unsigned char *)cfg + 0x00) = 1;   /* ScreenMode = 1 */
+    if (*PTR_DAT_13810cd8 == 0 && *PTR_DAT_13811928 == 0) {
+        jogo_nao_encontrado();
+        return;
+    }
 
-    /*
-     * FUN_135c52bc enfileira a escrita:
-     *   1. Verifica que o caminho do jogo e valido (FUN_135c5498 -- testa lock
-     *      em DAT_13819a8c; false se o worker ja esta rodando).
-     *   2. Grava os campos configurados no arquivo .ini do Point Blank.
-     *   3. Dispara o card de notificacao se show_card != 0.
-     *
-     * show_card = 1  ->  texto @ DAT_1360069c via FUN_1358027c:
-     *   "Iniciando verificacao e reparacao do sistema...\r\n
-     *    O progresso ser..."
-     */
-    pbconfig_aplicar_config(cfg, /*show_card=*/1);    /* FUN_135c52bc         */
+    ui_set_visivel(*(void **)(form + 0x4a0), 0);
+    ui_set_visivel(*(void **)(form + 0x49c), 1);
+
+    {
+        int *obj = *(int **)(*PTR_DAT_1381110c + 0x49c);
+        ((void (*)(int *, int))(*(int **)obj)[0x188 / 4])(obj, 1);
+    }
+
+    /* chave/valor ofuscados (DAT_1372e228 / DAT_1372e240) */
+    config_gravar((void *)*PTR_DAT_13811bac, /*chave*/ NULL, /*valor*/ NULL);
+
+    if (mostrar_card) {
+        /* titulo e corpo ofuscados (DAT_1372e25c .. DAT_1372e2f8) */
+        FUN_1358027c(/*titulo*/ NULL, /*corpo*/ NULL, 0x1194);
+    }
 }
 
-/*
- * pb_fullscreen_restaurar  --  volta ao modo janela
- *
- * Seta ScreenMode=0 e chama ApplyConfig sem card de notificacao.
- */
-void pb_fullscreen_restaurar(void)
-{
-    void *cfg = pbconfig_criar();
-    *(unsigned char *)((unsigned char *)cfg + 0x00) = 0;   /* ScreenMode = 0 (janela) */
-    pbconfig_aplicar_config(cfg, /*show_card=*/0);
-}
-
-/* Externs desta secao (mesmos que §19 MINI-MAP OFF).                        */
-/* extern void *pbconfig_criar(void);          FUN_13149aa8(&DAT_136003e4,1) */
-/* extern void  pbconfig_aplicar_config(...);  FUN_135c52bc                  */
+/* Nao ha pb_fullscreen_restaurar(): o caminho de desligar FULLSCREEN nao
+ * foi localizado.  O padrao de FUN_1372e7bc (desligar opcao, apagar chave,
+ * vtable[0x188](..., 0)) sugere uma funcao irma, mas ela nao foi
+ * identificada.                                                             */
 
 
 /* ===========================================================================
