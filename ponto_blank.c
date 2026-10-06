@@ -2786,259 +2786,219 @@ void pb_fullscreen_restaurar(void)
 
 
 /* ===========================================================================
- *  23) OTIMIZAÇÃO GPU
+ *  23) OTIMIZACAO GPU
  * ===========================================================================
  *
- *  Configura o subsistema grafico do Windows para maxima performance em jogo:
- *  aumenta a prioridade de GPU/CPU para o processo do PB, habilita o Hardware
- *  Accelerated GPU Scheduling (HAGS), minimiza latencias de transicao de estado
- *  de energia da GPU e oferece uma sub-ferramenta de configuracao do Painel de
- *  Controle da NVIDIA.
- *
- *  CLASSE PRINCIPAL
- *  ----------------
- *  TGPU_Utils  (RTTI @ 0x136c1ad6)
- *    Metodos identificados:
- *      NVIDIABOOST_OFFClick      --  abre/configura o Painel de Controle NVIDIA
- *      CheckDriverAndChipset     --  detecta driver + chipset instalado
- *      DriverRowClick            --  seleciona linha de driver na grade
- *      RunDriverInstaller        --  executa instalador de driver
- *      RPSidePanel1RowClick      --  interacao com painel lateral
- *
- *  TGPURegistryWorker (RTTI @ 0x13734cd1)
- *    Worker de monitoramento em background: abre uma query PDH para:
- *      "\\GPU Engine(*)\\Utilization Percentage"
- *      "\\GPU Adapter Memory(*)\\Dedicated Limit"
- *    Reporta utilizacao e memoria dedicada da GPU enquanto o painel esta aberto.
- *
- *  ITEMS DE PERFIL (cache/shader GPU, painel interno)
- *  ---------------------------------------------------
- *    gpu_directx  @ 0x136697f4  -- limpa NVIDIA DXCache e GLCache
- *    gpu_nvidia   @ 0x13669bbc  -- otimizacoes especificas NVIDIA
- *    gpu_amd      @ 0x13669ea0  -- otimizacoes especificas AMD
- *    gpu_intel    @ 0x1366a098  -- otimizacoes especificas Intel
- *
- *    NVIDIABOOST  @ 0x136c1e50 / 0x136c292c
- *      chave     : "NVIDIABOOST"  (11 chars)
- *      icone     : "icon.png"
- *      sucesso   : "Painel de controle da NVIDIA configurado com sucesso!\r\n
- *                   Otimizacoes aplicadas para maximo desempenho e estabilidade."
- *      erro      : "Nao foi possivel aplicar o perfil NVIDIA."
- *
- *  REGISTROS -- ATIVAR  (dispatcher @ 0x135f7f54, 9 comandos)
- *  -----------------------------------------------------------
- *    0x135f8000  reg add "HKLM\...\SystemProfile\Tasks\Games"
- *                  /v "GPU Priority"  /t REG_DWORD /d 8  /f
- *                  -- eleva prioridade de GPU para jogos (0-8, max=8)
- *
- *    0x135f8138  reg add "HKLM\...\SystemProfile\Tasks\Games"
- *                  /v "Priority"  /t REG_DWORD /d 6  /f
- *                  -- prioridade de CPU para jogos (Tasks\Games)
- *
- *    0x135f82xx  reg add "HKLM\...\Multimedia\SystemProfile"
- *                  /v "SystemResponsiveness"  /t REG_DWORD /d 0  /f
- *                  -- elimina reserva de CPU para aplicacoes em background
- *
- *    0x135f8880  reg add "HKLM\...\Services\Tcpip\Parameters"
- *                  /v "TCPNoDelay"  /t REG_DWORD /d 1  /f
- *                  -- desativa algoritmo de Nagle (reduz latencia de rede)
- *
- *    0x135f897c  reg add "HKLM\...\Control\GraphicsDrivers"
- *                  /v "HwSchMode"  /t REG_DWORD /d 2  /f
- *                  -- habilita HAGS (Hardware Accelerated GPU Scheduling)
- *
- *    0x135d70a0  Reg.exe add "HKLM\...\PriorityControl"
- *                  /v "Win32PrioritySeparation" /t REG_DWORD /d 38 /f
- *                  -- aumenta fatia de tempo para threads em primeiro plano
- *
- *  REGISTROS -- DESLIGAR  (dispatcher @ 0x135f94ac, 7 comandos)
- *  -------------------------------------------------------------
- *    0x135f8ad8  reg delete "HKLM\...\Tasks\Games"
- *                  /v "GPU Priority"  /f
- *
- *    0x135f93e4  reg delete "HKLM\...\Control\GraphicsDrivers"
- *                  /v "HwSchMode"  /f
- *                  -- remove HAGS (volta ao agendamento tradicional)
- *
- *    0x135f9514  reg add "HKLM\...\PriorityControl"
- *                  /v "Win32PrioritySeparation" /t REG_DWORD /d 18 /f
- *                  -- restaura o padrao do Windows (18 = balanceado)
- *
- *  LATENCIA DE ENERGIA DA GPU  (16 comandos @ 0x135d880c – 0x135da204)
- *  ---------------------------------------------------------------------
- *  Todos gravam /d "1" para minimizar a latencia de transicao de estado D3:
- *    0x135d880c  GraphicsDrivers\Power\DefaultD3TransitionLatencyActivelyUsed
- *    0x135d8a00  GraphicsDrivers\Power\DefaultD3TransitionLatencyIdleLongTime
- *    ... (14 entradas adicionais, variantes ActivelyUsed/Idle/Hibernate)
- *  Efeito: a GPU nao entra em estados de baixo consumo entre frames, eliminando
- *  o "stutter" causado pela rampa de energia ao retomar trabalho.
+ *  Painel "OTIMIZACOES DA GPU" (formulario TGPU_Utils).  O que esta comprovado
+ *  no binario sao duas tabelas de comandos -- uma de ATIVAR e uma espelho de
+ *  RESTAURAR -- executadas pelo despachante generico de comandos, mais a
+ *  sub-ferramenta NVIDIABOOST, que importa um perfil pronto no driver NVIDIA
+ *  usando o NVIDIA Profile Inspector.
  *
  *  STRINGS DE UI
- *    "AJUSTES DA GPU"                                      @ 0x13781ab2
- *    "Restaurando ajustes da GPU"                          @ 0x136c57f8
+ *    "OTIMIZACOES DA GPU"                                   @ 0x13781aa0
+ *      (UTF-16, com cedilha/til; nao e "AJUSTES DA GPU")
+ *    "Restaurando ajustes da GPU"                           @ 0x136c57f8
  *    "Os ajustes da GPU desta tela foram desligados e os
- *     registros do ReetFPS apagados."                      @ 0x136c56bc
+ *     registros do ReetFPS apagados."                       @ 0x136c56bc
  *
- *  FUNCOES
- *    TGPU_Utils RTTI                @ 0x136c1ad6
- *    TGPURegistryWorker RTTI        @ 0x13734cd1
- *    dispatcher ativar (9 cmds)     @ 0x135f7f54
- *    dispatcher desligar (7 cmds)   @ 0x135f94ac
- *    dispatcher power latency       @ ~0x135d880c
- *    NVIDIABOOST_OFFClick           (metodo de TGPU_Utils, offset interno)
+ *  CLASSES / RTTI
+ *    TGPU_Utils -- so os nomes dos registros de metodos anonimos foram
+ *    localizados (nao o typeinfo da classe):
+ *      "TGPU_Utils.NVIDIABOOST_OFFClick$ActRec"            @ 0x136c1ad6
+ *      "TGPU_Utils.CheckDriverAndChipset$ActRec"           @ 0x136c37f2
+ *      "TGPU_Utils.DriverRowClick$ActRec"                  @ 0x136c4a7e
+ *      "TGPU_Utils.RunDriverInstaller$ActRec"              @ 0x136c4de2
+ *      "TGPU_Utils.RPSidePanel1RowClick$ActRec"            @ 0x136c5286
+ *    TGPURegistryWorker                                    @ 0x13734cd1
+ *      Consulta PDH enquanto o painel esta aberto:
+ *        "\GPU Engine(*)\Utilization Percentage"           @ 0x137350f0
+ *        "\GPU Adapter Memory(*)\Dedicated Limit"          @ 0x13735180
+ *
+ *  DESPACHANTE DE COMANDOS: FUN_135d1fb8 @ 0x135d1fb8
+ *    void FUN_135d1fb8(const wchar_t **cmds, int high)
+ *      -> FUN_135d1fdc(&PTR_FUN_135d1ec4, 1, cmds, high)
+ *    Recebe um open array Delphi: ponteiro para o array e o INDICE MAXIMO
+ *    (contagem - 1) em EDX.  Ex.: EDX=9 => 10 comandos.
+ *
+ *  TABELA ATIVAR -- codigo @ 0x135f7f88 (ADD ESP,-0x28; EDX=9; CALL 0x135d1fb8)
+ *    0x135f8000  Tasks\Games            "GPU Priority"         = 8
+ *    0x135f8138  Tasks\Games            "Priority"             = 6
+ *    0x135f8268  SystemProfile          "SystemResponsiveness" = 0
+ *    0x135f8398  PolicyManager\...\ApplicationManagement\AllowGameDVR "value" = 0
+ *    0x135f84b8  HKCU\System\GameConfigStore "GameDVR_Enabled" = 0
+ *    0x135f8580  HKCU\...\CurrentVersion\GameDVR "AppCaptureEnabled"   = 0
+ *    0x135f8680  HKCU\...\CurrentVersion\GameDVR "AudioCaptureEnabled" = 0
+ *    0x135f8784  Tcpip\Parameters       "TcpAckFrequency"      = 1
+ *    0x135f8884  Tcpip\Parameters       "TCPNoDelay"           = 1
+ *    0x135f897c  Control\GraphicsDrivers "HwSchMode"           = 2   (HAGS)
+ *    Obs.: TcpAckFrequency/TCPNoDelay sao ajustes de REDE (Nagle/ACK
+ *    atrasado), mas estao de fato nesta tabela do painel de GPU.
+ *
+ *  TABELA RESTAURAR -- codigo @ 0x135f8a60 (ADD ESP,-0x28; EDX=9; CALL 0x135d1fb8)
+ *    0x135f8ad8  reg delete Tasks\Games "GPU Priority"
+ *    0x135f8bf4  reg delete Tasks\Games "Priority"
+ *    0x135f8d08  SystemProfile "SystemResponsiveness" = 20  (padrao do Windows)
+ *    0x135f8e3c  AllowGameDVR "value"           = 1
+ *    0x135f8f5c  GameConfigStore "GameDVR_Enabled" = 1
+ *    0x135f9024  GameDVR "AppCaptureEnabled"    = 1
+ *    0x135f9124  GameDVR "AudioCaptureEnabled"  = 1
+ *    0x135f9228  reg delete Tcpip "TcpAckFrequency"
+ *    0x135f930c  reg delete Tcpip "TCPNoDelay"
+ *    0x135f93e4  reg delete GraphicsDrivers "HwSchMode"
+ *
+ *  NAO FAZEM PARTE DESTE PAINEL (correcao de versao anterior)
+ *    - 0x135f94ac (EDX=7, 8 cmds a partir de 0x135f9514) e a restauracao de
+ *      OUTRO conjunto: Win32PrioritySeparation=18, pagefile automatico (wmic
+ *      @ 0x135f9608), GlobalUserDisabled=0 (0x135f96b8),
+ *      BackgroundAppGlobalToggle=1 (0x135f97c8), BackgroundTaskHost /
+ *      BackgroundTransferHost / cloudexperiencehost / LockApp (AppInfo).
+ *    - "Win32PrioritySeparation"=38 @ 0x135d70a0 pertence ao bloco "Reg.exe
+ *      add" da regiao 0x135d5xxx-0x135d7xxx (mesmo estilo das tarefas MMCSS
+ *      da secao 15).  Despachante que o empilha nao identificado (sem xrefs).
+ *    - Os 6 valores de latencia D3 abaixo tambem estao nessa regiao; nao ha
+ *      evidencia de que o painel de GPU os execute.
+ *        0x135d880c  DefaultD3TransitionLatencyActivelyUsed   = 1
+ *        0x135d8934  DefaultD3TransitionLatencyIdleLongTime   = 1
+ *        0x135d8a5c  DefaultD3TransitionLatencyIdleMonitorOff = 1
+ *        0x135d8b88  DefaultD3TransitionLatencyIdleNoContext  = 1
+ *        0x135d8cb0  DefaultD3TransitionLatencyIdleShortTime  = 1
+ *        0x135d8dd8  DefaultD3TransitionLatencyIdleVeryLongTime = 1
+ *      (todos em HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Power)
+ *    - gpu_directx / gpu_nvidia / gpu_amd / gpu_intel (0x136697f4,
+ *      0x13669bbc, 0x13669ea0, 0x1366a098) sao itens da LISTA DE LIMPEZA de
+ *      caches de shader (mesma regiao da tabela da secao 11), nao ajustes de GPU.
+ *      Cada registro = aviso, caminhos, rotulo, chave.  Ex.: gpu_directx ->
+ *      "Shaders do DirectX": ...\AppData\Local\D3DSCache e
+ *      ...\Microsoft\DirectX Shader Cache; gpu_nvidia -> NVIDIA\DXCache,
+ *      GLCache, VkCache; gpu_amd -> AMD\DxCache, DxcCache, GLCache, VkCache;
+ *      gpu_intel -> Intel\ShaderCache, GfxCache.
+ *
+ *  INFERIDO: os botoes LIGAR/DESLIGAR do painel chamam 0x135f7f88 /
+ *  0x135f8a60.  Os dois blocos nao estao definidos como funcoes no Ghidra e
+ *  nao tem xrefs; a ligacao vem do conteudo (espelho exato um do outro) e da
+ *  mensagem de restauracao do proprio painel.
  */
 
-/*
- * Tabela de comandos para ATIVAR a otimizacao de GPU.
- * dispatcher @ 0x135f7f54 passa 9 ponteiros ao executor multi-comando.
- */
+/* Despachante generico (open array Delphi: array + indice maximo).          */
+extern void FUN_135d1fb8(const wchar_t **cmds, int high);
+
+/* Tabela ATIVAR -- ordem e texto exatos do bloco @ 0x135f7f88.              */
 static const wchar_t *gpu_cmds_ativar[] = {
     /* 0x135f8000 */
-    L"reg add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
-    L"\\Multimedia\\SystemProfile\\Tasks\\Games\""
-    L" /v \"GPU Priority\" /t REG_DWORD /d 8 /f",
-
+    L"reg add \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
+    L"\\Multimedia\\SystemProfile\\Tasks\\Games\" /v \"GPU Priority\" /t REG_DWORD /d 8 /f",
     /* 0x135f8138 */
-    L"reg add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
-    L"\\Multimedia\\SystemProfile\\Tasks\\Games\""
-    L" /v \"Priority\" /t REG_DWORD /d 6 /f",
-
-    /* 0x135f82xx */
-    L"reg add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
-    L"\\Multimedia\\SystemProfile\""
-    L" /v \"SystemResponsiveness\" /t REG_DWORD /d 0 /f",
-
-    /* 0x135f8880 */
-    L"reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\""
+    L"reg add \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
+    L"\\Multimedia\\SystemProfile\\Tasks\\Games\" /v \"Priority\" /t REG_DWORD /d 6 /f",
+    /* 0x135f8268 */
+    L"reg add \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
+    L"\\Multimedia\\SystemProfile\" /v \"SystemResponsiveness\" /t REG_DWORD /d 0 /f",
+    /* 0x135f8398 */
+    L"reg add \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\PolicyManager\\default"
+    L"\\ApplicationManagement\\AllowGameDVR\" /v \"value\" /t REG_DWORD /d 0 /f",
+    /* 0x135f84b8 */
+    L"reg add \"HKEY_CURRENT_USER\\System\\GameConfigStore\""
+    L" /v \"GameDVR_Enabled\" /t REG_DWORD /d 0 /f",
+    /* 0x135f8580 */
+    L"reg add \"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR\""
+    L" /v \"AppCaptureEnabled\" /t REG_DWORD /d 0 /f",
+    /* 0x135f8680 */
+    L"reg add \"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR\""
+    L" /v \"AudioCaptureEnabled\" /t REG_DWORD /d 0 /f",
+    /* 0x135f8784 -- ajuste de rede, mas esta nesta tabela */
+    L"reg add \"HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\""
+    L" /v \"TcpAckFrequency\" /t REG_DWORD /d 1 /f",
+    /* 0x135f8884 -- ajuste de rede, mas esta nesta tabela */
+    L"reg add \"HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\""
     L" /v \"TCPNoDelay\" /t REG_DWORD /d 1 /f",
-
-    /* 0x135f897c */
-    L"reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\""
+    /* 0x135f897c -- HAGS */
+    L"reg add \"HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\""
     L" /v \"HwSchMode\" /t REG_DWORD /d 2 /f",
-
-    /* 0x135d70a0 */
-    L"Reg.exe add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl\""
-    L" /v \"Win32PrioritySeparation\" /t REG_DWORD /d \"38\" /f",
 };
 
-/*
- * Tabela de comandos para DESLIGAR / restaurar padroes.
- * dispatcher @ 0x135f94ac passa 7 ponteiros.
- */
-static const wchar_t *gpu_cmds_desligar[] = {
+/* Tabela RESTAURAR -- espelho exato, bloco @ 0x135f8a60.                    */
+static const wchar_t *gpu_cmds_restaurar[] = {
     /* 0x135f8ad8 */
-    L"reg delete \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
-    L"\\Multimedia\\SystemProfile\\Tasks\\Games\""
-    L" /v \"GPU Priority\" /f",
-
+    L"reg delete \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
+    L"\\Multimedia\\SystemProfile\\Tasks\\Games\" /v \"GPU Priority\" /f",
+    /* 0x135f8bf4 */
+    L"reg delete \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
+    L"\\Multimedia\\SystemProfile\\Tasks\\Games\" /v \"Priority\" /f",
+    /* 0x135f8d08 */
+    L"reg add \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
+    L"\\Multimedia\\SystemProfile\" /v \"SystemResponsiveness\" /t REG_DWORD /d 20 /f",
+    /* 0x135f8e3c */
+    L"reg add \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\PolicyManager\\default"
+    L"\\ApplicationManagement\\AllowGameDVR\" /v \"value\" /t REG_DWORD /d 1 /f",
+    /* 0x135f8f5c */
+    L"reg add \"HKEY_CURRENT_USER\\System\\GameConfigStore\""
+    L" /v \"GameDVR_Enabled\" /t REG_DWORD /d 1 /f",
+    /* 0x135f9024 */
+    L"reg add \"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR\""
+    L" /v \"AppCaptureEnabled\" /t REG_DWORD /d 1 /f",
+    /* 0x135f9124 */
+    L"reg add \"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR\""
+    L" /v \"AudioCaptureEnabled\" /t REG_DWORD /d 1 /f",
+    /* 0x135f9228 */
+    L"reg delete \"HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\""
+    L" /v \"TcpAckFrequency\" /f",
+    /* 0x135f930c */
+    L"reg delete \"HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\""
+    L" /v \"TCPNoDelay\" /f",
     /* 0x135f93e4 */
-    L"reg delete \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\""
+    L"reg delete \"HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\""
     L" /v \"HwSchMode\" /f",
-
-    /* 0x135f9514 */
-    L"reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl\""
-    L" /v \"Win32PrioritySeparation\" /t REG_DWORD /d 18 /f",
 };
 
-/*
- * Tabela de comandos de latencia de energia da GPU.
- * 16 entradas, todas no formato:
- *   Reg.exe add "HKLM\SYSTEM\...\GraphicsDrivers\Power" /v "<nome>" /t REG_DWORD /d "1" /f
- * Primeira entrada @ 0x135d880c.
- */
-static const wchar_t *gpu_cmds_power_latency[] = {
-    /* 0x135d880c */
-    L"Reg.exe add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\\Power\""
-    L" /v \"DefaultD3TransitionLatencyActivelyUsed\" /t REG_DWORD /d \"1\" /f",
+#define GPU_QTD(a) ((int)(sizeof(a) / sizeof((a)[0])))
 
-    /* 0x135d8a00 */
-    L"Reg.exe add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\\Power\""
-    L" /v \"DefaultD3TransitionLatencyIdleLongTime\" /t REG_DWORD /d \"1\" /f",
-
-    /* ... 14 entradas adicionais (DefaultD3TransitionLatencyIdle*,
-     *     D3LatencyHibernate*, etc.) entre 0x135d880c e 0x135da204 */
-};
-
-/*
- * gpu_otimizacao_ativar  --  handler do botao "LIGAR" no painel AJUSTES DA GPU
- *
- * Executa os comandos de registro em duas passagens:
- *   1. dispatcher @ 0x135f7f54  (prioridades + HAGS + rede)
- *   2. dispatcher interno       (16 comandos de latencia de energia)
- * Persiste estado em HKCU\Keyboard Layout\ReetFPS.
- * Exibe progresso via FUN_134a8d98 e card de notificacao via FUN_1358027c.
- *
- * Funcoes nao decompiladas (area 0x136cxxxx tem Delphi codigo/dado intercalado
- * que o Ghidra nao analisa como funcoes isoladas).
- */
+/* Bloco @ 0x135f7f88: monta o array na pilha e chama o despachante com
+ * EDX = 9 (indice maximo => 10 comandos).                                   */
 void gpu_otimizacao_ativar(void)
 {
-    int i;
-
-    /* Passa 1: prioridades de GPU/CPU + HAGS + TCPNoDelay. */
-    for (i = 0; i < 6; i++)
-        executar_cmd(gpu_cmds_ativar[i]);   /* FUN_135d1f20 via dispatcher 0x135f7f54 */
-
-    /* Passa 2: 16 comandos de latencia de transicao D3 da GPU
-     * (dispatcher interno, entradas @ 0x135d880c – 0x135da204).               */
-    for (i = 0; i < 16; i++)
-        executar_cmd(gpu_cmds_power_latency[i]);
-
-    /* Notifica usuario (string "AJUSTES DA GPU" @ 0x13781ab2).                 */
-    /* FUN_1358027c(...) → card de notificacao                                  */
-    /* FUN_134a8d98(...) → progresso no painel lateral                          */
+    FUN_135d1fb8(gpu_cmds_ativar, GPU_QTD(gpu_cmds_ativar) - 1);
 }
 
-/*
- * gpu_otimizacao_restaurar  --  handler do botao "DESLIGAR"
- *
- * Reverte as mudancas de registro e exibe a mensagem de confirmacao:
- * "Os ajustes da GPU desta tela foram desligados e os registros do
- *  ReetFPS apagados."  @ 0x136c56bc
- *
- * Texto de progresso: "Restaurando ajustes da GPU"  @ 0x136c57f8
- */
+/* Bloco @ 0x135f8a60: mesmo formato, EDX = 9.                               */
 void gpu_otimizacao_restaurar(void)
 {
-    int i;
-    for (i = 0; i < 3; i++)
-        executar_cmd(gpu_cmds_desligar[i]); /* dispatcher @ 0x135f94ac (7 cmds) */
-
-    /* Exibe confirmacao: string @ 0x136c56bc via FUN_134a8d98.                 */
+    FUN_135d1fb8(gpu_cmds_restaurar, GPU_QTD(gpu_cmds_restaurar) - 1);
 }
 
 /*
- * gpu_nvidiaboost_aplicar  --  TGPU_Utils::NVIDIABOOST_OFFClick
- *                              (metodo de TGPU_Utils, RTTI @ 0x136c1ad6)
+ * gpu_nvidiaboost_aplicar  --  TGPU_Utils.NVIDIABOOST_OFFClick
+ *   (registro do metodo anonimo: "TGPU_Utils.NVIDIABOOST_OFFClick$ActRec"
+ *    @ 0x136c1ad6; chave "NVIDIABOOST" @ 0x136c1e50 / 0x136c292c)
  *
- * Configura o Painel de Controle da NVIDIA via APIs NVAPI ou escrita direta
- * de preferencias no registro NVIDIA.  O perfil define:
- *   - Modo de energia: "Prefer Maximum Performance"
- *   - Sincronizacao vertical: desabilitada
- *   - Filtragem de textura: alto desempenho
- *   - Suavizacao: desabilitada
+ * NAO liga opcoes individuais do driver: importa um perfil pronto com o
+ * NVIDIA Profile Inspector.  Strings que comprovam o mecanismo:
+ *   "nvidiaProfileInspector.zip"                            @ 0x136bf0b8
+ *   "nvidiaProfileInspector.exe"                            @ 0x136bf0fc
+ *   "ReetFPS.nip"                                           @ 0x136bf140
+ *   "...o encontrado dentro do ZIP: nvidiaProfileInspector.exe" @ 0x136bf178
+ *   "...o encontrado dentro do ZIP: ReetFPS.nip"            @ 0x136bf208
+ *   "-importProfile \""                                     @ 0x136beab0
+ *   "Falha ao iniciar o import do perfil NVIDIA: "          @ 0x136beaf0
+ * Mensagens de erro (UTF-16 com acentos):
+ *   "Nao foi possivel aplicar o perfil NVIDIA.\r\n"         @ 0x136c1fa4
+ *   "A otimizacao NVIDIA esta disponivel apenas para placas NVIDIA.\r\n"
+ *   "Nenhum perfil NVIDIA foi importado."                   @ 0x136c21e4
  *
- * Retorna sucesso/erro via card de notificacao:
- *   sucesso : "Painel de controle da NVIDIA configurado com sucesso!\r\n
- *              Otimizacoes aplicadas para maximo desempenho e estabilidade."
- *   erro    : "Nao foi possivel aplicar o perfil NVIDIA."
- *
- * (Funcao nao decompilada diretamente -- regiao 0x136cxxxx inacessivel ao
- *  Ghidra por intercalamento de codigo/dado Delphi. Comportamento inferido
- *  das strings e do nome do metodo na RTTI.)
+ * O metodo nao foi decompilado (regiao 0x136cxxxx sem funcoes definidas).
+ * INFERIDO: a ordem dos passos abaixo; o conteudo de ReetFPS.nip (quais
+ * opcoes do driver ele altera) nao esta visivel como texto no binario.
  */
 void gpu_nvidiaboost_aplicar(void)
 {
-    /* TGPU_Utils::CheckDriverAndChipset() -- detecta fabricante e versao.      */
-    /* if (driver == NVIDIA) → configura via NVAPI / registro NVIDIA            */
-    /* else → exibe mensagem "Nao foi possivel aplicar o perfil NVIDIA."        */
-
-    /* Card de notificacao @ 0x136c1e50 / 0x136c292c via FUN_1358027c.         */
+    /* 1. INFERIDO: confere se a placa e NVIDIA; senao mostra a mensagem
+     *    @ 0x136c21e4 e sai.                                                */
+    /* 2. Extrai nvidiaProfileInspector.exe e ReetFPS.nip do ZIP embutido;
+     *    se faltar algum, mostra "...o encontrado dentro do ZIP: <nome>".   */
+    /* 3. Executa: nvidiaProfileInspector.exe -importProfile "ReetFPS.nip".
+     *    Falha ao iniciar -> "Falha ao iniciar o import do perfil NVIDIA: ".*/
+    /* 4. Falha no import -> "Nao foi possivel aplicar o perfil NVIDIA."     */
 }
-
-/* Externs desta secao.                                                         */
-extern void executar_cmd(const wchar_t *cmd); /* FUN_135d1f20 ou similar       */
-/* FUN_134a8d98, FUN_1358027c ja declarados em secoes anteriores               */
 
 
 /* ============================================================================
