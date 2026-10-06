@@ -1816,161 +1816,185 @@ extern int *PTR_DAT_13811378;   /* ponteiro para painel de notificacoes      */
 
 
 /* ===========================================================================
- *  16) INTERFACE SEM DELAY
+ *  16) INTERFACE SEM DELAY  (toggle de transparencia do Windows)
  * ===========================================================================
  *
- *  Desativa a transparencia do Windows (Aero) e os efeitos visuais para
- *  reduzir a carga do compositor DWM e eliminar atrasos de resposta de menu
- *  e janela.  A restauracao reverte tudo para a aparencia padrao do Windows.
+ *  O que o binario comprova: um par de handlers de botao (liga/desliga) que
+ *  executam cada um um bloco de 6 comandos "reg add" sobre transparencia,
+ *  OLED taskbar, miniaturas do DWM e ColorPrevalence, gravam o estado no
+ *  registro do ReetFPS e mostram um card de notificacao.
  *
- *  STRINGS DE UI
- *    "Interface otimizada"                               @ 0x136ed2c8 (label)
- *    "Transparencia do Windows desativada!\r\n"
- *     "Efeitos visuais desativados para priorizar "
- *     "desempenho e reduzir latencia."                  @ 0x136b3740 (ativar)
- *    "Transparencia do Windows ativada!\r\n"
- *     "Efeitos visuais restaurados para uma interface "
- *     "mais fluida e moderna."                          @ ~0x136b398c (restaurar)
+ *  INFERIDO: a ligacao deste par de handlers com o card "INTERFACE SEM
+ *  DELAY" da lista de features vem do texto dos toasts, nao de uma
+ *  referencia direta no binario.  O item de recomendacao "INTERFACE"
+ *  (@ 0x136ed1e0, label "Interface otimizada" @ 0x136ed2c8, descricao
+ *  "Aplica os ajustes recomendados de interface para melhor estabilidade e
+ *  fluidez." @ 0x136ed200, icone "window") e outro mecanismo: e despachado
+ *  pela lista generica de recomendacoes e nao chama estes handlers.
  *
- *  ITEM DE PERFIL
- *    "EFFECTS_ON"  @ 0x136b6adc
+ *  OBSERVACAO IMPORTANTE (comportamento do proprio ReetFPS):
+ *    os textos dos toasts estao TROCADOS em relacao aos comandos.
+ *      - o handler @ 0x136b35fc roda EnableTransparency=1 (transparencia
+ *        LIGADA) e mostra "Transparencia do Windows desativada!";
+ *      - o handler @ 0x136b383c roda EnableTransparency=0 (transparencia
+ *        DESLIGADA) e mostra "Transparencia do Windows ativada!".
+ *    A reconstrucao abaixo nomeia cada funcao pelo EFEITO dos comandos e
+ *    mantem o toast que o binario realmente exibe.
  *
- *  FUNCAO ATIVAR:   FUN_136b35e4  @ 0x136b35e4
- *  FUNCAO RESTAURAR: area antes de 0x136b3900
+ *  HANDLERS (funcoes nao definidas no Ghidra; prologo 55 8B EC confirmado)
+ *    0x136b35fc  -> pb_interface_transparencia_religar()
+ *                   oculta +0x4ac, exibe +0x4b0, chama FUN_135e79a4
+ *    0x136b383c  -> pb_interface_transparencia_desligar()
+ *                   oculta +0x4b0, exibe +0x4ac, chama FUN_135e7fdc
+ *    Ponteiros para os dois handlers aparecem em 0x136ae989/0x136ae9a5 e
+ *    0x136af81a/0x136af85f (ligacao dos eventos de clique).
  *
- *  COMANDOS DE REGISTRO -- DESATIVAR EFEITOS (enderecos: 0x135f3848, 0x135f3940)
- *    reg add "HKCU\...\Explorer\VisualEffects"
- *            /v VisualFXSetting        /t REG_DWORD /d 0 /f  (melhor desempenho)
- *    reg add "HKCU\...\Explorer\VisualEffects"
- *            /v VisualFXSettingPerUser /t REG_DWORD /d 0 /f
+ *  BLOCO "DESLIGAR" -- FUN_135e7fdc @ 0x135e7fdc (6 cmds, FUN_135d1fb8, High=5)
+ *    Tambem registrado na tabela nome->rotina sob a chave
+ *    "DisableTransparencyWindows" (@ 0x135fa5f4; ponteiro em 0x135fa3fd).
+ *      0x135e8030  ...\Themes\Personalize  EnableTransparency         = 0
+ *      0x135e8144  HKCU ...\Explorer\Advanced UseOLEDTaskbarTransparency = 0
+ *      0x135e8268  HKLM ...\Explorer\Advanced UseOLEDTaskbarTransparency = 0
+ *      0x135e8370  HKCU ...\DWM            AlwaysHibernateThumbnails  = 0
+ *      0x135e843c  HKCU ...\DWM            ColorPrevalence            = 0
+ *      0x135e8510  ...\Themes\Personalize  ColorPrevalence            = 1
  *
- *  COMANDOS DE REGISTRO -- DESATIVAR TRANSPARENCIA (enderecos: 0x135e8030)
- *    reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize"
- *            /v EnableTransparency /t REG_DWORD /d 0 /f
+ *  BLOCO "RELIGAR" -- FUN_135e79a4 @ 0x135e79a4 (6 cmds, FUN_135d1fb8, High=5)
+ *      0x135e79f8  ...\Themes\Personalize  EnableTransparency         = 1
+ *      0x135e7b0c  HKCU ...\Explorer\Advanced UseOLEDTaskbarTransparency = 1
+ *      0x135e7c30  HKLM ...\Explorer\Advanced UseOLEDTaskbarTransparency = 1
+ *      0x135e7d38  HKCU ...\DWM            AlwaysHibernateThumbnails  = 1
+ *      0x135e7e04  HKCU ...\DWM            ColorPrevalence            = 1
+ *      0x135e7ed8  ...\Themes\Personalize  ColorPrevalence            = 0
  *
- *  COMANDOS DE REGISTRO -- RESPONSIVIDADE DE MENU/JANELA (0x135eb0a0)
- *    reg add "HKCU\Control Panel\Desktop" /v ForegroundLockTimeout  /d 0     /f
- *    reg add "HKCU\Control Panel\Desktop" /v HungAppTimeout         /d 2000  /f
- *    reg add "HKCU\Control Panel\Desktop" /v WaitToKillAppTimeout   /d 2000  /f
- *    reg add "HKCU\Control Panel\Desktop" /v MenuShowDelay          /d 0     /f
- *    reg add "HKCU\Control Panel\Desktop" /v LowLevelHooksTimeout   /d 2000  /f
- *    reg add "HKCU\System\GameConfigStore" /v GameMode              /d 0     /f
+ *  STRINGS DE UI (UnicodeString)
+ *    "Transparencia do Windows desativada!\r\nEfeitos visuais desativados
+ *     para priorizar desempenho e reduzir latencia."     @ 0x136b3740
+ *    "Transparencia do Windows ativada!\r\nEfeitos visuais restaurados
+ *     para uma interface mais fluida e moderna."         @ 0x136b3980
+ *    "ReetFPS" (titulo)                    @ 0x136b382c / 0x136b3a60
+ *    "icon.png"                            @ 0x136b3720 / 0x136b3960
+ *    Item de perfil "Transparency_ON"      @ 0x136b6dec  (INFERIDO: chave
+ *    de estado; o nome gravado pelos handlers vem ofuscado, ver abaixo)
  *
- *  COMANDOS DE REGISTRO -- DESATIVAR ANIMACOES DWM (0x135d3e50)
- *    reg add "HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM"
- *            /v DisableAnimations /t REG_DWORD /d 1 /f >nul 2>&1
- *
- *  COMANDOS DE REGISTRO -- RESTAURAR EFEITOS (enderecos: 0x135f2458, 0x135f2554)
- *    reg add "HKCU\...\Explorer\VisualEffects"
- *            /v VisualFXSetting        /t REG_DWORD /d 2 /f  (melhor aparencia)
- *    reg add "HKCU\...\Explorer\VisualEffects"
- *            /v VisualFXSettingPerUser /t REG_DWORD /d 2 /f
- *  RESTAURAR TRANSPARENCIA (0x135e79f8)
- *    reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize"
- *            /v EnableTransparency /t REG_DWORD /d 1 /f
+ *  BLOCOS RELACIONADOS QUE NAO FAZEM PARTE DESTES HANDLERS
+ *    - VisualFX "melhor desempenho": funcao @ 0x135f373c (26 cmds), inclui
+ *      VisualFXSetting=0 @ 0x135f3844 e VisualFXSettingPerUser=0
+ *      @ 0x135f3940.  Chamada apenas por outro handler (CALL @ 0x136b0a4a,
+ *      botoes +0x51c/+0x518), sem toast.
+ *    - VisualFX "restaurar": funcao @ 0x135f22f0 (35 cmds), inclui
+ *      VisualFXSetting=2 @ 0x135f2458 e PerUser=2 @ 0x135f2554.  Chamada
+ *      por CALL @ 0x136b081d.
+ *      INFERIDO: estes dois handlers (0x136b08xx/0x136b0axx) parecem ser o
+ *      item "EFFECTS_ON" (@ 0x136b6adc); nao ha referencia direta.
+ *    - DisableAnimations=1 (@ 0x135d3e50) esta dentro do bloco gigante
+ *      @ 0x135d2d98 (232 cmds), registrado sob a chave "TweaksAll"
+ *      (@ 0x135fa5a4).  Nao e executado pelo toggle de transparencia.
+ *    - MenuShowDelay/ForegroundLock/HungApp/WaitToKill/LowLevelHooks e
+ *      PowerThrottlingOff: funcao @ 0x135eb0ac (6 cmds), registrada sob a
+ *      chave "OptimizeProcessorForGaming" (@ 0x135fa794).  Nao pertence a
+ *      esta feature.  GameMode=0 (@ 0x135eb018) fica fora dessa funcao.
  */
 
-/* Executa os 6 comandos de responsividade de menu/janela (FUN @ 0x135eb0a0).
- * Carrega as strings na pilha e chama o despachante com edx=5 (6 itens).     */
-static void configurar_responsividade_interface(void)
+/* Executor de lote: recebe array de UnicodeString e o indice High.          */
+extern void executar_lote_cmd(const wchar_t **cmds, int high);  /* FUN_135d1fb8 */
+
+/* Decodificador de strings ofuscadas do ReetFPS (nao mostra nada na tela). */
+extern void decodificar_string(void *ctx, const void *blob, int tam,
+                               DelphiStr *saida, int k1, int k2, int k3); /* FUN_134a8d98 */
+
+/* Escrita de estado no registro do ReetFPS (TRegistry).                     */
+extern void reet_settings_preparar(void *settings, DelphiStr *saida);   /* FUN_135529c4 */
+extern void reet_settings_gravar(void *settings, DelphiStr chave,
+                                 DelphiStr valor);                       /* FUN_13552a50 */
+
+extern void FUN_132abec4(int controle, int visivel);      /* TControl.Visible */
+extern int *PTR_DAT_13811568;   /* objeto de configuracoes do ReetFPS          */
+extern int *PTR_DAT_13811378;   /* contexto do decodificador de strings        */
+
+/* Card de notificacao.  Convencao register do Delphi: EAX=titulo, EDX=corpo,
+ * ECX=0x1194; demais 13 argumentos vao pela pilha (confirmado nos PUSH antes
+ * de CALL 0x1358027c em 0x136b36b8 e 0x136b38f8).                            */
+extern void FUN_1358027c(const wchar_t *titulo, const wchar_t *corpo, int p3,
+                         int p4, int p5, int p6, int p7, int p8, int p9,
+                         const wchar_t *icone, int c1, int c2, int c3,
+                         int f1, int f2, int f3);
+
+/* FUN_135e7fdc @ 0x135e7fdc -- desliga transparencia e efeitos do DWM.      */
+static void interface_bloco_desligar(void)
 {
-    /* 0x135eb1f0 */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Desktop\""
-                 " /v ForegroundLockTimeout /t REG_DWORD /d 0 /f");
-    /* 0x135eb2a4 */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Desktop\""
-                 " /v HungAppTimeout /t REG_SZ /d 2000 /f");
-    /* 0x135eb348 */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Desktop\""
-                 " /v MenuShowDelay /t REG_SZ /d 0 /f");
-    /* 0x135eb3e4 */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Desktop\""
-                 " /v WaitToKillAppTimeout /t REG_SZ /d 2000 /f");
-    /* 0x135eb494 */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Desktop\""
-                 " /v LowLevelHooksTimeout /t REG_SZ /d 2000 /f");
-    /* 0x135eb00e */
-    executar_cmd("reg add \"HKCU\\System\\GameConfigStore\""
-                 " /v \"GameMode\" /t REG_DWORD /d 0 /f");
-    /* 0x135eb100 */
-    executar_cmd("reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling\""
-                 " /v PowerThrottlingOff /t REG_DWORD /d 1 /f");
+    static const wchar_t *cmds[6] = {
+        /* 0x135e8030 */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize\" /v EnableTransparency /t REG_DWORD /d 0 /f",
+        /* 0x135e8144 */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\" /v UseOLEDTaskbarTransparency /t REG_DWORD /d 0 /f",
+        /* 0x135e8268 */ L"reg add \"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\" /v UseOLEDTaskbarTransparency /t REG_DWORD /d 0 /f",
+        /* 0x135e8370 */ L"reg add \"HKCU\\SOFTWARE\\Microsoft\\Windows\\DWM\" /v AlwaysHibernateThumbnails /t REG_DWORD /d 0 /f",
+        /* 0x135e843c */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\DWM\" /v ColorPrevalence /t REG_DWORD /d 0 /f",
+        /* 0x135e8510 */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize\" /v ColorPrevalence /t REG_DWORD /d 1 /f",
+    };
+    executar_lote_cmd(cmds, 5);                              /* EDX = 5 (High) */
 }
 
-/* Ponto de entrada do perfil INTERFACE SEM DELAY -- desativa efeitos visuais.
- * FUN_136b35e4 @ 0x136b35e4.                                                 */
-void pb_interface_sem_delay_ativar(void)
+/* FUN_135e79a4 @ 0x135e79a4 -- religa transparencia e efeitos do DWM.       */
+static void interface_bloco_religar(void)
 {
-    /* Desativa transparencia do Aero.                                         */
-    /* 0x135e8030 */
-    executar_cmd("reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows"
-                 "\\CurrentVersion\\Themes\\Personalize\""
-                 " /v EnableTransparency /t REG_DWORD /d 0 /f");
-
-    /* Desativa animacoes do compositor DWM.                                   */
-    /* 0x135d3e50 */
-    executar_cmd("reg add \"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\DWM\""
-                 " /v DisableAnimations /t REG_DWORD /d 1 /f >nul 2>&1");
-
-    /* Ajusta VisualFX para melhor desempenho (desativa todos os efeitos).     */
-    /* 0x135f3848 */
-    executar_cmd("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion"
-                 "\\Explorer\\VisualEffects\""
-                 " /v VisualFXSetting /t REG_DWORD /d 0 /f");
-    /* 0x135f3940 */
-    executar_cmd("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion"
-                 "\\Explorer\\VisualEffects\""
-                 " /v VisualFXSettingPerUser /t REG_DWORD /d 0 /f");
-
-    /* Configura timeouts de menu e janela para resposta imediata.             */
-    configurar_responsividade_interface();
-
-    /* Notificacao de sucesso via card toast (FUN_1358027c).                   */
-    FUN_1358027c(
-        L"ReetFPS",                                       /* title @ 0x136b382c */
-        L"Transparência do Windows desativada!\r\n"
-         "Efeitos visuais desativados para priorizar "
-         "desempenho e reduzir latência.",                /* body @ 0x136b3740  */
-        0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
-        L"icon.png",                                      /* @ 0x136b3720       */
-        0xffffffff, 0xffffffff, 0xffffffff, 1, 1, 1);
+    static const wchar_t *cmds[6] = {
+        /* 0x135e79f8 */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize\" /v EnableTransparency /t REG_DWORD /d 1 /f",
+        /* 0x135e7b0c */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\" /v UseOLEDTaskbarTransparency /t REG_DWORD /d 1 /f",
+        /* 0x135e7c30 */ L"reg add \"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\" /v UseOLEDTaskbarTransparency /t REG_DWORD /d 1 /f",
+        /* 0x135e7d38 */ L"reg add \"HKCU\\SOFTWARE\\Microsoft\\Windows\\DWM\" /v AlwaysHibernateThumbnails /t REG_DWORD /d 1 /f",
+        /* 0x135e7e04 */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\DWM\" /v ColorPrevalence /t REG_DWORD /d 1 /f",
+        /* 0x135e7ed8 */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize\" /v ColorPrevalence /t REG_DWORD /d 0 /f",
+    };
+    executar_lote_cmd(cmds, 5);
 }
 
-/* Restaura efeitos visuais e transparencia para o padrao do Windows.         */
-void pb_interface_sem_delay_restaurar(void)
+/* Parte comum dos dois handlers: decodifica um texto ofuscado e o grava no
+ * registro do ReetFPS.  O conteudo decodificado nao foi recuperado.
+ * blob = 0x136b3700 (religar) ou 0x136b3940 (desligar), tam = 0x11a,
+ * chaves (0x46, 0x15, 1) ou (0x46, 0x15, 0).                                 */
+static void interface_gravar_estado(const void *blob, int k3)
 {
-    /* Reativa transparencia.                                                   */
-    /* 0x135e79f8 */
-    executar_cmd("reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows"
-                 "\\CurrentVersion\\Themes\\Personalize\""
-                 " /v EnableTransparency /t REG_DWORD /d 1 /f");
+    DelphiStr dec = NULL, tmp = NULL, ref = NULL;
+    decodificar_string((void *)*PTR_DAT_13811378, blob, 0x11a, &dec, 0x46, 0x15, k3);
+    str_assign(&tmp, dec);                                          /* FUN_1314c690 */
+    reet_settings_preparar((void *)*PTR_DAT_13811568, &ref);
+    reet_settings_gravar((void *)*PTR_DAT_13811568, ref, tmp);
+}
 
-    /* Restaura VisualFX para "melhor aparencia" (todos os efeitos ligados).   */
-    /* 0x135f2458 */
-    executar_cmd("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion"
-                 "\\Explorer\\VisualEffects\""
-                 " /v VisualFXSetting /t REG_DWORD /d 2 /f");
-    /* 0x135f2554 */
-    executar_cmd("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion"
-                 "\\Explorer\\VisualEffects\""
-                 " /v VisualFXSettingPerUser /t REG_DWORD /d 2 /f");
+/* Handler @ 0x136b383c -- comandos DESLIGAM a transparencia; o toast exibido
+ * pelo binario diz "ativada" (ver OBSERVACAO no cabecalho).                  */
+void pb_interface_transparencia_desligar(uint8_t *painel)
+{
+    interface_gravar_estado((const void *)0x136b3940, 0);
+    FUN_132abec4(*(int *)(painel + 0x4b0), 0);
+    FUN_132abec4(*(int *)(painel + 0x4ac), 1);
+    interface_bloco_desligar();                                     /* FUN_135e7fdc */
 
-    /* Restaura delays de menu para o padrao do Windows.                       */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Desktop\""      /* 0x135f42c4 */
-                 " /v MenuShowDelay /t REG_SZ /d 400 /f");
-    executar_cmd("reg add \"HKCU\\Control Panel\\Desktop\""      /* 0x135f4364 */
-                 " /v WaitToKillAppTimeout /t REG_SZ /d 20000 /f");
-    executar_cmd("reg add \"HKCU\\Control Panel\\Desktop\""      /* 0x135f4418 */
-                 " /v HungAppTimeout /t REG_SZ /d 5000 /f");
+    FUN_1358027c(L"ReetFPS",                                         /* 0x136b3a60 */
+                 L"Transparencia do Windows ativada!\r\n"
+                 L"Efeitos visuais restaurados para uma interface "
+                 L"mais fluida e moderna.",                          /* 0x136b3980 */
+                 0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+                 L"icon.png",                                        /* 0x136b3960 */
+                 -1, -1, -1, 1, 1, 1);
+}
 
-    /* Notificacao de restauracao.                                             */
-    FUN_1358027c(
-        L"ReetFPS",
-        L"Transparência do Windows ativada!\r\n"
-         "Efeitos visuais restaurados para uma interface "
-         "mais fluida e moderna.",                        /* @ ~0x136b398c     */
-        0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
-        L"icon.png", 0xffffffff, 0xffffffff, 0xffffffff, 1, 1, 1);
+/* Handler @ 0x136b35fc -- comandos RELIGAM a transparencia; o toast exibido
+ * pelo binario diz "desativada" (ver OBSERVACAO no cabecalho).               */
+void pb_interface_transparencia_religar(uint8_t *painel)
+{
+    interface_gravar_estado((const void *)0x136b3700, 1);
+    FUN_132abec4(*(int *)(painel + 0x4ac), 0);
+    FUN_132abec4(*(int *)(painel + 0x4b0), 1);
+    interface_bloco_religar();                                      /* FUN_135e79a4 */
+
+    FUN_1358027c(L"ReetFPS",                                         /* 0x136b382c */
+                 L"Transparencia do Windows desativada!\r\n"
+                 L"Efeitos visuais desativados para priorizar "
+                 L"desempenho e reduzir latencia.",                  /* 0x136b3740 */
+                 0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+                 L"icon.png",                                        /* 0x136b3720 */
+                 -1, -1, -1, 1, 1, 1);
 }
 
 
