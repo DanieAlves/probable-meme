@@ -1542,108 +1542,158 @@ extern const wchar_t *g_formas_crosshair[];  /* PTR_u_QUADRADO_CENTRAL_1380f738 
  *  14) TECLADO DE PRECISAO  (interno: "Teclado Turbo")
  * ===========================================================================
  *
- *  Otimiza a resposta do teclado ajustando as configuracoes de acessibilidade
- *  do Windows (HKCU\Control Panel\Accessibility\Keyboard Response).  O efeito
- *  e reduzir atrasos de repeticao e eliminar a filtragem de teclas (FilterKeys)
- *  para que os comandos do jogo cheguem ao PB sem latencia adicional.
+ *  Ajusta a resposta do teclado em HKCU\Control Panel\Accessibility\Keyboard
+ *  Response: desliga o FilterKeys (Flags=0) e encurta o atraso/intervalo de
+ *  repeticao.  A restauracao volta aos padroes do Windows.
  *
- *  O modulo tambem detecta teclados HID conectados (GetRawInputDeviceList +
- *  GetRawInputDeviceInfoW) antes de aplicar as configuracoes.
+ *  HANDLERS (nenhum dos dois esta definido como funcao no Ghidra; enderecos
+ *  obtidos pelo prologo 55 8B EC e pelos literais que seguem cada um)
+ *    0x136b54d4  -- ATIVAR    : grava estado, troca botoes, roda 0x135e9af4,
+ *                               exibe o toast
+ *    0x136b5704  -- RESTAURAR : grava estado, troca botoes, roda 0x135e9d98,
+ *                               sem toast
  *
  *  STRINGS DE UI
- *    "Teclado Turbo ativado!\r\nLatencia reduzida e resposta imediata..."
- *                                              @ ~0x136b5608  (UTF-16LE)
- *    "Teclado conectado"                        @  0x1353b43c
+ *    "ReetFPS"                                   @ 0x136b56f4  (UTF-16LE)
+ *    "Teclado Turbo ativado!\r\nLatencia reduzida e resposta imediata para
+ *     comandos mais rapidos e precisos."        @ 0x136b5614  (UTF-16LE)
+ *    "icon.png"                                  @ 0x136b55f4  (UTF-16LE)
  *
- *  ITENS DE PERFIL (tabela de WideChar* em 0x136b6bec / 0x136b6cac)
- *    "TeclasAderencia_ON"    @ 0x136b6bec  -- desativa tecla aderente (StickyKeys)
- *    "OpTeclado_ON"          @ 0x136b6cac  -- otimiza configuracoes do teclado
+ *  BLOCO ATIVAR  @ 0x135e9af4  -- 3 comandos, executar_lote(arr, 2)
+ *    0x135e9b30  reg add "...\Keyboard Response" /v Flags /t REG_SZ /d 0 /f >nul 2>&1
+ *    0x135e9c00  reg add "...\Keyboard Response" /v AutoRepeatDelay /t REG_SZ /d 250 /f
+ *    0x135e9cd4  reg add "...\Keyboard Response" /v AutoRepeatRate  /t REG_SZ /d 20 /f
  *
- *  TIPOS HID DETECTADOS (tabela @ 0x1353b080)
- *    "RECEPTOR"  @ 0x1353b088  -- receptor sem fio
- *    "KEYBOARD"  @ 0x1353b0d8  -- teclado USB padrao
- *    "TECLADO"   @ 0x1353b0f8  -- alias em portugues
- *    "KEYPAD"    @ (seguinte)  -- teclado numerico
+ *  BLOCO RESTAURAR  @ 0x135e9d98  -- 4 comandos, executar_lote(arr, 3)
+ *    0x135e9ddc  /v AutoRepeatDelay /t REG_SZ /d 300 /f
+ *    0x135e9eb0  /v AutoRepeatRate  /t REG_SZ /d 45 /f
+ *    0x135e9f80  /v BounceTime      /t REG_SZ /d 0 /f
+ *    0x135ea048  /v Flags           /t REG_SZ /d 2 /f
  *
- *  CHAVE DE ESTADO: HKCU\Keyboard Layout\ReetFPS
- *    Usada para gravar/restaurar o estado; referenciada em:
- *      0x1353f8b4, 0x13584434, 0x135940f0, 0x135a09c8
+ *  ITENS RELACIONADOS (nao chamados pelos handlers acima)
+ *    "TeclasAderencia_ON" @ 0x136b6bec e "OpTeclado_ON" @ 0x136b6cac fazem
+ *    parte da tabela generica de chaves de toggle (ver §15).
+ *    INFERIDO: a ligacao de qualquer um deles com o "Teclado Turbo" e apenas
+ *    pelo nome.
  *
- *  COMANDOS DE REGISTRO -- APLICAR (enderecos: 0x135e9b30 .. 0x135e9cd4)
- *    reg add "HKCU\Control Panel\Accessibility\Keyboard Response"
- *            /v Flags           /t REG_SZ /d 0   /f  (desativa FilterKeys)
- *    reg add ...                /v AutoRepeatDelay /t REG_SZ /d 250 /f  (ms)
- *    reg add ...                /v AutoRepeatRate  /t REG_SZ /d 20  /f  (ms)
- *    reg add "HKCU\Control Panel\Accessibility\MouseKeys"
- *            /v Flags           /t REG_SZ /d 0   /f  (desativa MouseKeys)
- *                                              @ 0x135ea1a8
- *
- *  COMANDOS DE REGISTRO -- RESTAURAR (enderecos: 0x135e9ddc .. 0x135e9f80)
- *    reg add ...                /v AutoRepeatDelay /t REG_SZ /d 300 /f  (padrao)
- *    reg add ...                /v AutoRepeatRate  /t REG_SZ /d 45  /f  (padrao)
- *    reg add ...                /v BounceTime      /t REG_SZ /d 0   /f
- *    reg add ...                /v Flags           /t REG_SZ /d 2   /f  (restaura FilterKeys)
+ *  O QUE NAO FAZ PARTE DESTE MODULO
+ *    - MouseKeys: "reg add ...\Accessibility\MouseKeys /v Flags /d 0"
+ *      @ 0x135ea1a8 e o 1o de um lote de 16 comandos de MOUSE (FUN_135ea0f8:
+ *      MouseSonar, MouseSpeed, MouseThreshold1/2, DoubleClickSpeed,
+ *      MouseHoverTime em HKCU/HKU..., MouseSensitivity=10).  Nao e chamado
+ *      pelo handler do Teclado Turbo.
+ *    - Deteccao de teclado HID: a tabela de tipos (RECEPTOR @ 0x1353b088 ...)
+ *      e a string "Teclado conectado" @ 0x1353b43c existem, mas o handler
+ *      0x136b54d4 nao faz nenhuma checagem antes de executar o bloco.
  */
 
-/* Detecta teclados HID antes de aplicar as configuracoes.
- * Usa GetRawInputDeviceList + GetRawInputDeviceInfoW (@ 0x13835ef0 / 0x13836766).
- * Retorna true se um teclado compativel (KEYBOARD, TECLADO, RECEPTOR, KEYPAD)
- * foi encontrado.                                                              */
-extern bool teclado_hid_detectar(void);    /* FUN_1353b000 (area) */
+/* Despachante de comandos: FUN_135d1fb8(arr, ultimo_indice).
+ * Cria um objeto de thread (FUN_135d1fdc) que copia as linhas nao vazias
+ * para uma lista, monta um script .bat ("@echo off" / "setlocal ..." /
+ * linhas / "exit /b %errorlevel%", FUN_135d20d8) e o executa.             */
+extern void executar_lote(const wchar_t *cmds[], int ultimo_indice);   /* FUN_135d1fb8 */
 
-/* Executa um comando de shell elevado (wrapper de aplicar_tweak).             */
-extern void executar_cmd(const char *linha); /* FUN_135401d0 area */
+/* Decodificador de strings ofuscadas: le um blob cifrado e devolve a
+ * UnicodeString em claro em *saida.  NAO exibe nada na tela.              */
+extern void decodificar_str(void *ctx, const void *blob, int tam,
+                            void **saida, int k1, int k2, int k3);   /* FUN_134a8d98 */
 
-/* Card de notificacao (mesmo auxiliar usado por todos os modulos).            */
-extern void FUN_1358027c(const wchar_t *titulo, const wchar_t *corpo, ...);
+/* Grava a "chave de estado" do toggle: FUN_135529c4 decodifica o caminho
+ * (blob @ DAT_13552a34) e FUN_13552a50 abre HKCU (TRegistry, 0x80000001,
+ * acesso 0xf003f), OpenKey(caminho, criar=1) e WriteInteger(nome, valor).
+ * O caminho e o nome sao ofuscados; nao esta provado que o caminho seja
+ * "Keyboard Layout\ReetFPS" (INFERIDO: e a chave de estado usada no resto
+ * do programa, ex. @ 0x13467cd4).                                         */
+extern void estado_obter_chave(void *obj, void **caminho_out);       /* FUN_135529c4 */
+extern void estado_gravar(void *obj, void *caminho, void *nome);     /* FUN_13552a50 */
 
-void pb_teclado_precisao_ativar(void)
+/* Mostra/oculta um controle VCL (FUN_132abec4).                          */
+extern void vcl_set_visible(void *controle, int visivel);
+
+/* Toast do ReetFPS: FUN_1358027c recebe 16 argumentos (titulo, corpo,
+ * duracao em ms e parametros de layout/cor/icone).  Todas as chamadas
+ * observadas usam os mesmos valores: 0x1194 (4500 ms), 5, 0xe, 0xc, 0xa0,
+ * 0x17c, 0xf5, L"icon.png", -1, -1, -1, 1, 1, 1.                          */
+extern void FUN_1358027c(const wchar_t *titulo, const wchar_t *corpo,
+                         int duracao_ms, int p4, int p5, int p6, int p7,
+                         int p8, int p9, const wchar_t *icone,
+                         int p11, int p12, int p13, int p14, int p15, int p16);
+
+extern void **PTR_DAT_13811378;   /* contexto do decodificador de strings   */
+extern void **PTR_DAT_13811568;   /* objeto dono da gravacao de estado      */
+
+static void teclado_bloco_ativar(void)                           /* 0x135e9af4 */
 {
-    /* FUN_136b???? -- handler do botao TECLADO DE PRECISAO
-     *
-     * Fluxo reconstruido a partir dos itens de perfil, das strings e dos
-     * comandos de registro encontrados na regiao 0x135e9b30..0x135ea1b0.     */
-
-    if (!teclado_hid_detectar()) {
-        /* Nenhum teclado HID reconhecido -- exibe aviso.                     */
-        /* ("Teclado conectado" @ 0x1353b43c usado como indicador de ausencia) */
-        return;
-    }
-
-    /* Desativa FilterKeys (Flags=0) para eliminar atraso de filtragem.       */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
-                 " /v Flags /t REG_SZ /d 0 /f >nul 2>&1");           /* 0x135e9b30 */
-
-    /* Reduz tempo de repeticao: 250 ms de atraso, 20 ms entre repeticoes.   */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
-                 " /v AutoRepeatDelay /t REG_SZ /d 250 /f");          /* 0x135e9c00 */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
-                 " /v AutoRepeatRate /t REG_SZ /d 20 /f");            /* 0x135e9cd4 */
-
-    /* Desativa MouseKeys para nao interferir na precisao do mouse.           */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Accessibility\\MouseKeys\""
-                 " /v Flags /t REG_SZ /d 0 /f >nul 2>&1");           /* 0x135ea1a8 */
-
-    /* Notificacao de sucesso.                                                */
-    FUN_1358027c(
-        L"ReetFPS",
-        L"Teclado Turbo ativado!\r\nLatência reduzida e resposta imediata "
-         "para comandos mais rápidos e precisos.",
-        0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
-        L"icon.png", 0xffffffff, 0xffffffff, 0xffffffff, 1, 1, 1);
+    static const wchar_t *cmds[3] = {
+        L"reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
+        L" /v Flags /t REG_SZ /d 0 /f >nul 2>&1",                 /* 0x135e9b30 */
+        L"reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
+        L" /v AutoRepeatDelay /t REG_SZ /d 250 /f",               /* 0x135e9c00 */
+        L"reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
+        L" /v AutoRepeatRate /t REG_SZ /d 20 /f",                 /* 0x135e9cd4 */
+    };
+    executar_lote(cmds, 2);
 }
 
-void pb_teclado_precisao_restaurar(void)
+static void teclado_bloco_restaurar(void)                        /* 0x135e9d98 */
 {
-    /* Reverte para os valores padrao do Windows.                             */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
-                 " /v AutoRepeatDelay /t REG_SZ /d 300 /f");          /* 0x135e9ddc */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
-                 " /v AutoRepeatRate /t REG_SZ /d 45 /f");            /* 0x135e9eb0 */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
-                 " /v BounceTime /t REG_SZ /d 0 /f");                 /* 0x135e9f80 */
-    executar_cmd("reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
-                 " /v Flags /t REG_SZ /d 2 /f");                      /* (restaura) */
+    static const wchar_t *cmds[4] = {
+        L"reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
+        L" /v AutoRepeatDelay /t REG_SZ /d 300 /f",               /* 0x135e9ddc */
+        L"reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
+        L" /v AutoRepeatRate /t REG_SZ /d 45 /f",                 /* 0x135e9eb0 */
+        L"reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
+        L" /v BounceTime /t REG_SZ /d 0 /f",                      /* 0x135e9f80 */
+        L"reg add \"HKCU\\Control Panel\\Accessibility\\Keyboard Response\""
+        L" /v Flags /t REG_SZ /d 2 /f",                           /* 0x135ea048 */
+    };
+    executar_lote(cmds, 3);
+}
+
+/* Handler ATIVAR @ 0x136b54d4.  `painel` chega em EAX (Self do form).    */
+void pb_teclado_precisao_ativar(uint8_t *painel)
+{
+    void *nome = NULL, *caminho = NULL, *tmp = NULL;
+
+    /* Nome do valor de estado: blob @ 0x136b55d8 (cifrado).              */
+    decodificar_str(*PTR_DAT_13811378, (void *)0x136b55d8, 0xa4,
+                    &tmp, 0xe, 0x93, 1);
+    nome = tmp;                                  /* via FUN_1314c690       */
+
+    estado_obter_chave(*PTR_DAT_13811568, &caminho);
+    estado_gravar(*PTR_DAT_13811568, caminho, nome);
+
+    vcl_set_visible(*(void **)(painel + 0x4dc), 0);   /* oculta "ATIVAR"   */
+    vcl_set_visible(*(void **)(painel + 0x4e0), 1);   /* exibe  "ATIVO"    */
+
+    teclado_bloco_ativar();                           /* CALL 0x135e9af4   */
+
+    FUN_1358027c(L"ReetFPS",                                     /* 0x136b56f4 */
+                 L"Teclado Turbo ativado!\r\nLatência reduzida e resposta "
+                 L"imediata para comandos mais rápidos e precisos.",  /* 0x136b5614 */
+                 0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+                 L"icon.png",                                    /* 0x136b55f4 */
+                 -1, -1, -1, 1, 1, 1);
+}
+
+/* Handler RESTAURAR @ 0x136b5704.  Mesmo padrao, botoes invertidos, sem
+ * toast.  O nome do valor de estado vem de outro blob (0x136b57d0) e o
+ * ultimo argumento do decodificador e 0 em vez de 1.                     */
+void pb_teclado_precisao_restaurar(uint8_t *painel)
+{
+    void *nome = NULL, *caminho = NULL, *tmp = NULL;
+
+    decodificar_str(*PTR_DAT_13811378, (void *)0x136b57d0, 0xa4,
+                    &tmp, 0xe, 0x93, 0);
+    nome = tmp;
+
+    estado_obter_chave(*PTR_DAT_13811568, &caminho);
+    estado_gravar(*PTR_DAT_13811568, caminho, nome);
+
+    vcl_set_visible(*(void **)(painel + 0x4e0), 0);   /* oculta "ATIVO"    */
+    vcl_set_visible(*(void **)(painel + 0x4dc), 1);   /* exibe  "ATIVAR"   */
+
+    teclado_bloco_restaurar();                        /* CALL 0x135e9d98   */
 }
 
 
@@ -1651,168 +1701,178 @@ void pb_teclado_precisao_restaurar(void)
  *  15) ENTRADA INSTANTANEA
  * ===========================================================================
  *
- *  Pacote de otimizacoes de latencia aplicado de uma so vez.  Combina:
- *    - Configuracao da tarefa MMCSS "Low Latency" para prioridade maxima;
- *    - Desativacao do Game Bar / GameDVR / Xbox Live (que capturam input);
- *    - Despacho dos itens de perfil que cobrem servicos, efeitos visuais,
- *      telemetria, Cortana, OneDrive e demais fontes de jitter.
+ *  ATENCAO: o binario NAO contem o rotulo "ENTRADA INSTANTANEA" (nem
+ *  "instant"/"entrada" ligados a esta tela).  O nome vem da lista de
+ *  recursos anunciados.  O que existe e foi verificado sao as pecas abaixo;
+ *  a associacao delas com esse nome e INFERIDA pelo texto dos toasts
+ *  ("menor latencia", "resposta imediata", "input lag").
  *
- *  STRINGS DE UI
- *    "Ajustes de desempenho aplicados!\r\nSistema otimizado para menor "
- *     "latencia e resposta imediata em jogos."   @ ~0x136b0880  (UTF-16LE)
- *    "Game Bar desativada!\r\nRecursos em segundo plano foram desligados "
- *     "para reduzir input lag e melhorar o desempenho."
- *                                               @ 0x136b2124  (alias UTF-16LE)
+ *  ---------------------------------------------------------------------
+ *  A) "Ajustes de desempenho"  -- handler @ 0x136b0796
+ *  ---------------------------------------------------------------------
+ *    Mesmo padrao do §14: grava estado (blob @ 0x136b089c), oculta +0x518,
+ *    exibe +0x51c, roda o lote @ 0x135f22f0 e mostra o toast:
+ *      "Ajustes de desempenho aplicados!\r\nSistema otimizado para menor
+ *       latencia e resposta imediata em jogos."  @ 0x136b08e0 (UTF-16LE)
+ *      titulo @ 0x136b09b8, icone "icon.png" @ 0x136b08c0
  *
- *  ITENS DE PERFIL (tabela de WideChar* iniciando em ~0x136b6c00)
- *    "OpMouse_ON"          @ 0x136b6c88  -- otimiza precisao do mouse
- *    "OpTeclado_ON"        @ 0x136b6cac  -- otimiza teclado (ver §14)
- *    "TeclasAderencia_ON"  @ 0x136b6bec  -- desativa StickyKeys
- *    "GameBar_ON"          -- desativa Game Bar
- *    "GameDVR_ON"          -- desativa gravacao DVR
- *    "XboxLive_ON"         -- desativa servicos Xbox Live
- *    "EFFECTS_ON"          -- desativa efeitos visuais do Windows
- *    "DarkTheme_ON"        -- aplica tema escuro (reduz carga GPU)
- *    "Services_ON"         -- para servicos desnecessarios (ver §3 SERVICES)
- *    "Hibernate_ON"        -- desativa hibernacao
- *    "Superfetch_ON"       -- desativa SysMain/Superfetch
- *    "Cortana_ON"          -- remove Cortana
- *    "OneDrive_ON"         @ 0x136b6c70
- *    "APPS_ON"             @ 0x136b6c78
- *    "Ativador_ON"         @ (seguinte)
- *    "TarefaTelemetria_ON" -- cancela tarefas agendadas de telemetria
- *    "TelemetriaChrome_ON" -- desativa telemetria do Chrome
- *    "TelemetriaOffice_ON" @ 0x136b6c60
- *    "ADMENU_ON"           -- remove entradas de menu de contexto do Admin
+ *    LOTE @ 0x135f22f0 -- 35 comandos, executar_lote(arr, 0x22):
+ *      0x135f2458  VisualFXSetting=2  (2 = "ajustar para melhor desempenho")
+ *      0x135f2554  VisualFXSettingPerUser=2
+ *      0x135f2660  powercfg -setactive SCHEME_MIN
+ *      0x135f26ac..0x135f2ad8  PROCTHROTTLEMAX 100, PERFINCTHRESHOLD 100,
+ *                  PERFBOOSTMODE 0, PERFBOOSTPOL 100  (AC e DC, 8 cmds)
+ *      0x135f2b6c..0x135f3078  sc stop + start= disabled para DiagTrack,
+ *                  diagnosticshub.standardcollector.service, dmwappushservice,
+ *                  WMPNetworkSvc, MapsBroker, DoSvc, SysMain  (14 cmds)
+ *      0x135f30e0  MenuShowDelay=20
+ *      0x135f3180  WaitToKillAppTimeout=2000
+ *      0x135f3230  HungAppTimeout=2000
+ *      0x135f32d4  LowLevelHooksTimeout=2000
+ *      0x135f3384  MouseHoverTime=20
+ *      0x135f3420  BackgroundAccessApplications\GlobalUserDisabled=1
+ *      0x135f3530  Search\BackgroundAppGlobalToggle=0
+ *      0x135f3620  sc stop wuauserv
+ *      0x135f3664  sc config wuauserv start= disabled
+ *      0x135f36cc  Rundll32.exe user32.dll, UpdatePerUserSystemParameters
  *
- *  TAREFA MMCSS "Low Latency" (9 comandos @ 0x135d5b10 .. 0x135d64d0)
- *    HKLM\...\Multimedia\SystemProfile\Tasks\Low Latency:
- *      Affinity          = 0         (sem afinidade de CPU fixa)
- *      Background Only   = False
- *      BackgroundPriority= 0
- *      Clock Rate        = 10000     (100 ns por tick -- resolucao maxima)
- *      GPU Priority      = 8
- *      Priority          = 2
- *      Scheduling Category = Medium
- *      SFIO Priority     = High
- *      Latency Sensitive = True
- *    Tambem aplica "Latency Sensitive=True" na tarefa "Games" @ 0x135d6f6c.
+ *  ---------------------------------------------------------------------
+ *  B) Game Bar  -- FUN_136b1f48 @ 0x136b1f48
+ *  ---------------------------------------------------------------------
+ *    Toast "Game Bar desativada!\r\nRecursos em segundo plano foram
+ *    desligados para reduzir input lag e melhorar o desempenho."
+ *    @ 0x136b2124.  Ver reconstrucao abaixo.
  *
- *  FUNCAO GAME BAR: FUN_136b1f48 @ 0x136b1f48
- *    Verifica o estado atual do Game Bar (FUN_13551e10(PTR_DAT_13811568)).
- *    Se == 7 (Game Bar ja desativado): mostra aviso via DAT_136b20a8.
- *    Senao: desativa com FUN_13552a50, oculta botoes do painel (+0x470/+0x474)
- *           e exibe a notificacao de sucesso via FUN_1358027c.
+ *  ---------------------------------------------------------------------
+ *  C) Tarefa MMCSS "Low Latency"
+ *  ---------------------------------------------------------------------
+ *    As 9 strings (0x135d5b10 .. 0x135d64d0) e "Games\Latency Sensitive"
+ *    (0x135d6f6c) NAO formam uma funcao propria: sao entradas de um lote
+ *    unico de 232 comandos (codigo @ 0x135d2d8a, executar_lote(arr, 0xe7),
+ *    literais de 0x135d383c ate ~0x135e1300) que mistura MMCSS, prioridade,
+ *    rede, energia, latencia da GPU, servicos etc.
+ *    Valores da tarefa "Low Latency": Affinity=0, Background Only=False,
+ *    BackgroundPriority=0, Clock Rate=10000 (unidades de 100 ns = 1 ms),
+ *    GPU Priority=8, Priority=2, Scheduling Category=Medium,
+ *    SFIO Priority=High, Latency Sensitive=True.
+ *
+ *  ---------------------------------------------------------------------
+ *  D) Tabela generica de chaves de toggle  (0x136b6adc .. 0x136b6e44)
+ *  ---------------------------------------------------------------------
+ *    EFFECTS_ON @0x136b6adc, Hibernate_ON @0x136b6b00, Services_ON @0x136b6b28,
+ *    Cortana_ON @0x136b6b4c, TarefaTelemetria_ON @0x136b6b70,
+ *    Superfetch_ON @0x136b6ba4, ADMENU_ON @0x136b6bcc,
+ *    TeclasAderencia_ON @0x136b6bec, TelemetriaChrome_ON @0x136b6c20,
+ *    TelemetriaOffice_ON @0x136b6c54, OpMouse_ON @0x136b6c88,
+ *    OpTeclado_ON @0x136b6cac, OneDrive_ON @0x136b6cd4, APPS_ON @0x136b6cf8,
+ *    Ativador_ON @0x136b6d14, GameDVR_ON @0x136b6d38, GameBar_ON @0x136b6d5c,
+ *    XboxLive_ON @0x136b6d80, DarkTheme_ON @0x136b6da4, Volume_ON @0x136b6dcc,
+ *    Transparency_ON @0x136b6dec, Notification_ON @0x136b6e18,
+ *    Office_ON @0x136b6e44.
+ *    Sao as chaves de estado dos toggles da tela de otimizacoes do Windows.
+ *    Nada no binario as liga especificamente a "ENTRADA INSTANTANEA".
  */
 
-/* Configura a tarefa MMCSS "Low Latency" com prioridade e sensibilidade
- * maximas.  Cada chamada executa um dos 9 comandos reg acima.               */
-static void configurar_mmcss_low_latency(void)
-{
-    /* 0x135d5b10 */
-    executar_cmd("Reg.exe add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT"
-                 "\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Low Latency\""
-                 " /v \"Affinity\" /t REG_DWORD /d \"0\" /f");
-    /* 0x135d5c3c */
-    executar_cmd("Reg.exe add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT"
-                 "\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Low Latency\""
-                 " /v \"Background Only\" /t REG_SZ /d \"False\" /f");
-    /* 0x135d5d78 */
-    executar_cmd("Reg.exe add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT"
-                 "\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Low Latency\""
-                 " /v \"BackgroundPriority\" /t REG_DWORD /d \"0\" /f");
-    /* 0x135d5eb8 */
-    executar_cmd("Reg.exe add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT"
-                 "\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Low Latency\""
-                 " /v \"Clock Rate\" /t REG_DWORD /d \"10000\" /f");
-    /* 0x135d5ff0 */
-    executar_cmd("Reg.exe add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT"
-                 "\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Low Latency\""
-                 " /v \"GPU Priority\" /t REG_DWORD /d \"8\" /f");
-    /* 0x135d6124 */
-    executar_cmd("Reg.exe add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT"
-                 "\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Low Latency\""
-                 " /v \"Priority\" /t REG_DWORD /d \"2\" /f");
-    /* 0x135d6250 */
-    executar_cmd("Reg.exe add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT"
-                 "\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Low Latency\""
-                 " /v \"Scheduling Category\" /t REG_SZ /d \"Medium\" /f");
-    /* 0x135d6398 */
-    executar_cmd("Reg.exe add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT"
-                 "\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Low Latency\""
-                 " /v \"SFIO Priority\" /t REG_SZ /d \"High\" /f");
-    /* 0x135d64d0 */
-    executar_cmd("Reg.exe add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT"
-                 "\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Low Latency\""
-                 " /v \"Latency Sensitive\" /t REG_SZ /d \"True\" /f");
+/* A) Lote "Ajustes de desempenho" @ 0x135f22f0 (35 comandos).
+ * Lista completa e enderecos no cabecalho acima; aqui so a forma.        */
+extern const wchar_t *g_lote_ajustes_desempenho[35];   /* 0x135f2458 .. 0x135f36cc */
 
-    /* Tarefa Games -- tambem recebe Latency Sensitive.                       */
-    /* 0x135d6f6c */
-    executar_cmd("Reg.exe add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT"
-                 "\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games\""
-                 " /v \"Latency Sensitive\" /t REG_SZ /d \"True\" /f");
+static void entrada_lote_ajustes(void)                           /* 0x135f22f0 */
+{
+    executar_lote(g_lote_ajustes_desempenho, 0x22);
 }
 
-/* Handler do botao Game Bar dentro do painel ENTRADA INSTANTANEA.
- * FUN_136b1f48 @ 0x136b1f48.                                                */
-void pb_entrada_instantanea_desativar_gamebar(int painel)
+/* Handler @ 0x136b0796 (nao definido como funcao no Ghidra).            */
+void pb_ajustes_desempenho_ativar(uint8_t *painel)
 {
-    int estado = FUN_13551e10(*(int *)PTR_DAT_13811568);  /* le estado do GameBar */
+    void *nome = NULL, *caminho = NULL, *tmp = NULL;
 
-    if (estado == 7) {
-        /* Game Bar ja desativado -- exibe aviso (DAT_136b20a8).             */
-        FUN_134a8d98(*(int *)PTR_DAT_13811378,
-                     (void *)0x136b20a8,
-                     /*len=*/2, /*...*/0, 0x27, 0x52, 0);
+    decodificar_str(*PTR_DAT_13811378, (void *)0x136b089c, 0x1c,
+                    &tmp, 0x28, 0x101, 1);
+    nome = tmp;
+
+    estado_obter_chave(*PTR_DAT_13811568, &caminho);
+    estado_gravar(*PTR_DAT_13811568, caminho, nome);
+
+    vcl_set_visible(*(void **)(painel + 0x518), 0);
+    vcl_set_visible(*(void **)(painel + 0x51c), 1);
+
+    entrada_lote_ajustes();                           /* CALL 0x135f22f0   */
+
+    FUN_1358027c(L"ReetFPS",                                     /* 0x136b09b8 */
+                 L"Ajustes de desempenho aplicados!\r\nSistema otimizado para "
+                 L"menor latência e resposta imediata em jogos.",  /* 0x136b08e0 */
+                 0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+                 L"icon.png",                                    /* 0x136b08c0 */
+                 -1, -1, -1, 1, 1, 1);
+}
+
+/* B) Game Bar -- FUN_136b1f48 @ 0x136b1f48.
+ *
+ * FUN_13551e10 decodifica um nome, le um valor de configuracao
+ * (FUN_13554754) e o compara com ate 4 strings decodificadas; o handler
+ * so testa se o retorno e 7.  O significado de 7 NAO foi recuperado (as
+ * strings comparadas sao cifradas) -- nao e "Game Bar ja desativado".
+ *
+ *   retorno == 7 : decodifica uma mensagem (blob @ 0x136b20a8) e chama
+ *                  FUN_13552fac(obj, msg, 0), que abre um dialogo da
+ *                  aplicacao (FUN_13476c8c: botoes "CONFIRMAR"/"CANCELAR").
+ *                  Nao grava nada, nao mexe nos botoes, nao mostra toast.
+ *   caso contrario: grava a chave de estado (blob @ 0x136b20e8), troca os
+ *                  botoes +0x470/+0x474 e mostra o toast @ 0x136b2124.
+ *
+ * Nenhum comando "reg add" de Game Bar e executado aqui; os comandos de
+ * GameDVR/GameBar estao em outros lotes.                                 */
+extern int  FUN_13551e10(void *obj);
+extern void FUN_13552fac(void *obj, void *mensagem, int tipo);   /* dialogo */
+
+void pb_gamebar_desativar(uint8_t *painel)                       /* 0x136b1f48 */
+{
+    void *tmp = NULL, *msg = NULL, *nome = NULL, *caminho = NULL;
+
+    if (FUN_13551e10(*PTR_DAT_13811568) == 7) {
+        decodificar_str(*PTR_DAT_13811378, (void *)0x136b20a8, 2,
+                        &tmp, 0x27, 0x52, 0);
+        msg = tmp;                                   /* via FUN_1314c690   */
+        FUN_13552fac(*PTR_DAT_13811568, msg, 0);
         return;
     }
 
-    /* Salva estado anterior e desativa.                                      */
-    FUN_135529c4(*(int *)PTR_DAT_13811568, /*&backup=*/0);
-    FUN_13552a50(*(int *)PTR_DAT_13811568, /*backup=*/0, /*acao=*/0);
+    decodificar_str(*PTR_DAT_13811378, (void *)0x136b20e8, 0x1d,
+                    &tmp, 0x10, 0x34, 1);
+    nome = tmp;
+    estado_obter_chave(*PTR_DAT_13811568, &caminho);
+    estado_gravar(*PTR_DAT_13811568, caminho, nome);
 
-    /* Oculta os botoes do painel que ficam visiveis so quando ativo.        */
-    FUN_132abec4(*(int *)(painel + 0x470), 0);   /* oculta botao 1 */
-    FUN_132abec4(*(int *)(painel + 0x474), 1);   /* exibe botao 2  */
+    vcl_set_visible(*(void **)(painel + 0x470), 0);
+    vcl_set_visible(*(void **)(painel + 0x474), 1);
 
-    /* Notificacao de sucesso.                                                */
-    FUN_1358027c(
-        L"ReetFPS",
-        L"Game Bar desativada!\r\nRecursos em segundo plano foram desligados "
-         "para reduzir input lag e melhorar o desempenho.",  /* 0x136b2124 */
-        0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
-        L"icon.png", 0xffffffff, 0xffffffff, 0xffffffff, 1, 1, 1);
+    FUN_1358027c(L"ReetFPS",
+                 L"Game Bar desativada!\r\nRecursos em segundo plano foram "
+                 L"desligados para reduzir input lag e melhorar o desempenho.",
+                 0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+                 L"icon.png", -1, -1, -1, 1, 1, 1);
 }
 
-/* Ponto de entrada principal do perfil ENTRADA INSTANTANEA.
- * Despacha todos os itens de perfil habilitados (via executar_itens_habilitados)
- * e configura o MMCSS "Low Latency" em seguida.                             */
-void pb_entrada_instantanea_ativar(int painel)
-{
-    /* Os itens de perfil (OpMouse_ON, GameBar_ON, GameDVR_ON, XboxLive_ON,
-     * Services_ON, EFFECTS_ON, Hibernate_ON, Superfetch_ON, Cortana_ON,
-     * OneDrive_ON, APPS_ON, Ativador_ON, TarefaTelemetria_ON,
-     * TelemetriaChrome_ON, TelemetriaOffice_ON, ADMENU_ON, DarkTheme_ON,
-     * TeclasAderencia_ON, OpTeclado_ON) sao despachados pelo mecanismo
-     * generico de perfil (ver secao §3 + FUN_137008d0).                     */
-    executar_itens_habilitados(painel);   /* FUN_137008d0 -- despacha perfil */
-
-    /* Configura explicitamente a tarefa MMCSS "Low Latency".               */
-    configurar_mmcss_low_latency();
-
-    /* Desativa Game Bar se ainda ativa.                                     */
-    pb_entrada_instantanea_desativar_gamebar(painel);
-}
-
-/* Auxiliares externos referenciados nesta secao.                            */
-extern void executar_itens_habilitados(int painel);           /* FUN_137008d0 */
-extern int  FUN_13551e10(int game_bar_handle);
-extern void FUN_13552a50(int handle, int backup, int acao);
-extern void FUN_135529c4(int handle, int *backup_out);
-extern void FUN_134a8d98(int painel, void *msg, int tipo, ...);
-extern void FUN_132abec4(int controle, int visivel);
-extern int *PTR_DAT_13811568;   /* ponteiro para handle do Game Bar          */
-extern int *PTR_DAT_13811378;   /* ponteiro para painel de notificacoes      */
+/* C) Os 10 comandos MMCSS sao entradas do lote de 232 comandos
+ * @ 0x135d2d8a.  Nao ha funcao "configurar MMCSS Low Latency" separada,
+ * e nenhum codigo encontrado combina A + B + C numa unica acao
+ * "ENTRADA INSTANTANEA" -- por isso nao ha pb_entrada_instantanea_ativar(). */
+/* "..." abrevia "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia
+ * \SystemProfile"; a 1a linha mostra o comando completo.              */
+static const wchar_t *const k_mmcss_low_latency[] = {
+    L"Reg.exe add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia"
+    L"\\SystemProfile\\Tasks\\Low Latency\" /v \"Affinity\" /t REG_DWORD /d \"0\" /f",            /* 0x135d5b10 */
+    L"Reg.exe add \"...\\Tasks\\Low Latency\" /v \"Background Only\" /t REG_SZ /d \"False\" /f",   /* 0x135d5c3c */
+    L"Reg.exe add \"...\\Tasks\\Low Latency\" /v \"BackgroundPriority\" /t REG_DWORD /d \"0\" /f", /* 0x135d5d78 */
+    L"Reg.exe add \"...\\Tasks\\Low Latency\" /v \"Clock Rate\" /t REG_DWORD /d \"10000\" /f",     /* 0x135d5eb8 */
+    L"Reg.exe add \"...\\Tasks\\Low Latency\" /v \"GPU Priority\" /t REG_DWORD /d \"8\" /f",       /* 0x135d5ff0 */
+    L"Reg.exe add \"...\\Tasks\\Low Latency\" /v \"Priority\" /t REG_DWORD /d \"2\" /f",           /* 0x135d6124 */
+    L"Reg.exe add \"...\\Tasks\\Low Latency\" /v \"Scheduling Category\" /t REG_SZ /d \"Medium\" /f", /* 0x135d6250 */
+    L"Reg.exe add \"...\\Tasks\\Low Latency\" /v \"SFIO Priority\" /t REG_SZ /d \"High\" /f",      /* 0x135d6398 */
+    L"Reg.exe add \"...\\Tasks\\Low Latency\" /v \"Latency Sensitive\" /t REG_SZ /d \"True\" /f",  /* 0x135d64d0 */
+    L"Reg.exe add \"...\\Tasks\\Games\" /v \"Latency Sensitive\" /t REG_SZ /d \"True\" /f",        /* 0x135d6f6c */
+};
 
 
 /* ===========================================================================
