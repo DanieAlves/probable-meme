@@ -29,7 +29,7 @@ Metadados do binário:
 | Arquivo | Conteúdo |
 |---|---|
 | `reetfps.c` | Lógica reconstruída e comentada: fluxo de **login**, **resolvedor do PowerShell** e o **modelo do otimizador**. É o arquivo para ler primeiro. |
-| `ponto_blank.c` | Rotinas que o ReetFPS executa **diretamente no processo do jogo**: descoberta da instalação, encerramento de processos, elevação de prioridade de CPU/GPU/MMCSS e monitoramento de crashes. |
+| `ponto_blank.c` | 23 seções. Rotinas ligadas ao Point Blank (instalação, encerramento, prioridade de CPU/GPU, crashes, timer resolution) e as funcionalidades da tela do programa (teclado, interface, FPS, mapas, mini-map, tela cheia, GPU, mira). O cabeçalho do arquivo tem o índice e as convenções (`INFERIDO:` marca o que não foi comprovado). |
 | `catalogo_comandos.md` | Os **559 comandos** do otimizador, agrupados por efeito, em formato legível. |
 | `catalogo_comandos.c` | Os mesmos 559 comandos como arrays de dados em C (`Tweak[]` por categoria). |
 | `reetfps.h` | Tipo `Tweak` compartilhado. |
@@ -37,83 +37,80 @@ Metadados do binário:
 
 ## Mapa das funções-chave (para abrir no Ghidra)
 
-| Endereço | Papel | Reconstruído como |
+Gerado a partir do `ponto_blank.c` e do `reetfps.c` atuais. A coluna "§" é a
+seção do `ponto_blank.c` (ou `reetfps.c`). Muitos endereços não têm função
+definida no Ghidra; foram lidos pela desmontagem (prólogo `55 8B EC`).
+
+**Auxiliares usados em várias seções**
+
+| Endereço | Papel | Nome no C | § |
+|---|---|---|---|
+| `0x1358027c` | Card de notificação (16 parâmetros: título, corpo, duração + 13 na pilha) | `FUN_1358027c()` | todas |
+| `0x134a8d98` | Decodificador de strings **ofuscadas** (não exibe nada) | `decodificar_string()` | todas |
+| `0x135d1fb8` | Despachante de comandos: monta um `.bat` com o array e executa em thread | `executar_lote()` | 14–16, 23 |
+| `0x1369b158` | Grava par chave/valor no store JSON de configurações | `config_gravar()` | 17–22 |
+| `0x1369ae6c` | Remove chave do store JSON | `config_remover()` | 19–22 |
+| `0x132abec4` | `TControl.SetVisible` | `vcl_set_visible()` | todas |
+| `0x135fcd18` | Aviso "jogo não encontrado" (texto cifrado) | `jogo_nao_encontrado()` | 18–22 |
+
+**Login e otimizador (`reetfps.c`)**
+
+| Endereço | Papel | Nome no C |
 |---|---|---|
-| `0x1371598c` | Handler do clique no botão de login (`LoginButton_Panel2Click`) | `LoginButton_Click()` |
+| `0x1371598c` | Clique no botão de login (`LoginButton_Panel2Click`) | `LoginButton_Click()` |
 | `0x137161f4` | Thunk RTTI → `CALL 0x1371598c; RET` | — |
-| `0x135401d0` | Escolhe o caminho do `powershell.exe` (Sysnative vs System32) | `resolver_caminho_powershell()` |
-| `0x13700af0` | Entry point do perfil FLUIDEZMAX (`TReetGameModePanel`) | `pb_ativar_fluidezmax()` |
-| `0x137008d0` | `TReetGameModePanel.ExecuteGameModeActions` — coleta itens e despacha | `executar_itens_habilitados()` |
-| `0x135a50d8` | PowerThrottling + TimerResolutionPolicy no processo do jogo (Win11) | `pb_timer_resolution_policy_win11()` |
-| `0x1357c9b0` | Inicia thread de manutenção do timer de 0.5ms | `pb_timer_resolution_ativar_manutencao()` |
-| `0x1357ca34` | Para a thread e reverte o timer | `pb_timer_resolution_parar()` |
-| `0x1357c5e0` | Revert: `NtSetTimerResolution(0,FALSE)` + `timeEndPeriod(1)` | `pb_timer_resolution_revogar()` |
-| `0x1357c294` | Thunk de importação de `NtSetTimerResolution` (ntdll.dll) | — (thunk) |
-| `0x13674090` | Scanner recursivo: varre diretório e deleta arquivos (limpeza inteligente) | `limpeza_varrer_diretorio()` |
-| `0x13673ee0` | Deleta arquivo individual com fallback de tomada de posse | `limpeza_deletar_arquivo()` |
-| `0x13673dc4` | Normaliza caminho para `\\?\` (suporte a caminhos longos) | `limpeza_normalizar_caminho()` |
-| `0x1369407c` | Constrói instância de `TRPCrosshair` e registra no painel | `crosshair_criar()` |
-| `0x13694ab8` | Define parâmetros geométricos do crosshair (com clamp + repaint) | `crosshair_configurar_parametros()` |
-| `0x136951fc` | Renderiza o crosshair sobre a janela do Point Blank | `crosshair_desenhar()` |
-| `0x13696e3c` | Aplica configurações do diálogo "PERSONALIZAR MIRA" | `crosshair_aplicar_do_dialogo()` |
-| `0x1361508c` | Desenho do botão "LOGIN"/"ENTRANDO..." (UI) | — (apenas UI) |
-| `0x1359474c` | Desenho do card "APLICAR PERFIL"/"PERFIL ATIVO" (UI) | — (apenas UI) |
-| `0x136b1f48` | Handler que desativa o Game Bar dentro de ENTRADA INSTANTÂNEA | `pb_entrada_instantanea_desativar_gamebar()` |
-| `0x135d5b10` | Início da tabela com 9 comandos `reg` do MMCSS "Low Latency" | `configurar_mmcss_low_latency()` |
-| `0x135e9b30` | Início da tabela de comandos `reg` de TECLADO DE PRECISÃO (aplicar) | `pb_teclado_precisao_ativar()` |
-| `0x135e9ddc` | Início da tabela de comandos `reg` de TECLADO DE PRECISÃO (restaurar) | `pb_teclado_precisao_restaurar()` |
-| `0x136b35e4` | Desativa transparencia Aero + efeitos visuais (INTERFACE SEM DELAY) | `pb_interface_sem_delay_ativar()` |
-| `0x135eb0a0` | Executa 7 comandos de responsividade de menu/janela (sub-rotina) | `configurar_responsividade_interface()` |
-| `0x135f3848` | `VisualFXSetting = 0` — efeitos visuais no modo "melhor desempenho" | — (dado) |
-| `0x135e8030` | `EnableTransparency = 0` — desativa transparencia do Aero | — (dado) |
-| `0x13691854` | Construtor de `TRPFpsLimit` — cria o painel "TURBINAR FPS" | — (construtor VCL) |
-| `0x1369407c` | Entry point do aplicador de FPS por preset (índices 1–6) | `pb_fps_definir_preset()` |
-| `0x13693740` | Clamp do índice de preset: [1,6], default 3 se fora do range | — (auxiliar) |
-| `0x13693e20` | Aplicador completo: atualiza UI + thread de perf + motor do jogo | `fps_aplicar_no_jogo()` |
-| `0x13693fec` | Grava `FPS_SELECTION_INDEX` (ou `"UNLOCKEDFPS"`) no registro | `pb_fps_preset_salvar()` |
-| `0x13574f7c` | Setter atômico do FPS cap: escreve string em `fps_obj+0xc` e repinta | — (setter) |
-| `0x13687df8` | String estática `"FPS 486"` — valor máximo (modo SEM LIMITE) | — (dado) |
-| `0x13693728` | String estática `"UNLOCKEDFPS"` — marcador de estado ilimitado | — (dado) |
-| `0x136ec13c` | Init do painel MAPAS INSTANTÂNEOS: monta lista Superfetch_ON / LOADINGMAP / FULLSCREEN | `pb_mapas_instantaneos_ativar()` |
-| `0x135d50b4` | Início dos 3 comandos `reg` LanmanWorkstation cache (LOADINGMAP) | `mapas_configurar_lanman_cache()` |
-| `0x135d2ab4` | `sc stop SysMain` — desativa Superfetch/SysMain (MAPAS item 1) | `mapas_desativar_superfetch()` |
-| `0x135f0438` | `EnableSuperfetch=0` + `EnablePrefetcher=0` via PrefetchParameters | `mapas_desativar_superfetch()` |
-| `0x13582628` | RTTI da classe `TRPPBConfig` (`uRPPBConfig`) — gerencia o arquivo de config do PB | `pb_minimap_off_ativar()` |
-| `0x13584ce4` | Chave INI `HUD_Effect` (tabela de leitura) — controla efeitos de HUD | — (dado) |
-| `0x13584d08` | Chave INI `Enable_MissionIndicator` (tabela de leitura) — controla o mini-mapa | — (dado) |
-| `0x13585878` | Chave INI `HUD_Effect` (tabela de escrita) — gravada com valor 0 | — (dado) |
-| `0x1358589c` | Chave INI `Enable_MissionIndicator` (tabela de escrita) — gravada com valor 0 | — (dado) |
-| `0x13600598` | Handler do item `OPTIMIZER_PB_MANAGER` — cria contexto TRPPBConfig e aplica | `pb_minimap_off_ativar()` |
-| `0x135c52bc` | Enfileirador do ApplyConfig — verifica caminho do jogo e serializa o arquivo INI | `pbconfig_aplicar_config()` |
-| `0x136f7b50` | String `OPTIMIZER_PB_MANAGER` na tabela de despacho de perfis | — (dado) |
-| `0x13729580` | Label `"DESBLOQUEIO DE FPS"` (UTF-16LE) — título da feature | — (dado) |
-| `0x137295a8` | Ativa o DESBLOQUEADOR DE FPS: vtable[0x188](fps_cap_obj, 1) | `pb_desbloqueador_fps_ativar()` |
-| `0x1372987c` | Restaura o cap de FPS: vtable[0x188](fps_cap_obj, 0) | `pb_desbloqueador_fps_restaurar()` |
-| `0x13727a5c` | Valida / exibe sequência de progresso do FPS Game Booster | `pb_impulsionar_pb_validar()` |
-| `0x13728234` | Ativa o IMPULSIONAR POINTBLANK: vtable[0x188](booster_obj+0x500, 1) | `pb_impulsionar_pb_ativar()` |
-| `0x13728578` | Restaura o booster: vtable[0x188](booster_obj+0x500, 0) | `pb_impulsionar_pb_restaurar()` |
-| `0x13727a00` | Inicia o Point Blank pelo assistente (botão "INICIAR POINTBLANK") | `pb_impulsionar_iniciar_jogo()` |
-| `0x136ea1e8` | String `" FPS Game Booster"` — label interna do painel IMPULSIONAR | — (dado) |
-| `0x136ea420` | Chave de estado `"FirstAccessPointBlankBoosterApplied"` (HKCU\Keyboard Layout\ReetFPS) | — (dado) |
-| `0x136ece9c` | String `"FULLSCREEN"` — chave de item de perfil / estado (HKCU\Keyboard Layout\ReetFPS) | `pb_fullscreen_ativar()` |
-| `0x136ecfb4` | String `"Tela cheia otimizada"` — descrição do item de perfil | — (dado) |
-| `0x13585938` | Tabela de escrita TRPPBConfig; `ScreenMode` é o primeiro campo (offset 0x00) | `pb_fullscreen_ativar()` |
-| `0x13600598` | Handler `OPTIMIZER_PB_MANAGER` — cria contexto TRPPBConfig e aplica (compartilhado com §19) | `pb_fullscreen_ativar()` |
-| `0x136c1ad6` | RTTI `TGPU_Utils` — painel AJUSTES DA GPU; métodos: `NVIDIABOOST_OFFClick`, `CheckDriverAndChipset`, `DriverRowClick` | `gpu_nvidiaboost_aplicar()` |
-| `0x13734cd1` | RTTI `TGPURegistryWorker` — worker PDH: monitora utilização e memória dedicada da GPU | — (worker) |
-| `0x135f7f54` | Dispatcher dos 9 comandos de registro ATIVAR (GPU Priority, HAGS, TCPNoDelay…) | `gpu_otimizacao_ativar()` |
-| `0x135f94ac` | Dispatcher dos 7 comandos de registro DESLIGAR / restaurar padrões | `gpu_otimizacao_restaurar()` |
-| `0x135d880c` | Início dos 16 comandos `Reg.exe` de latência D3 da GPU (`DefaultD3TransitionLatency*=1`) | `gpu_otimizacao_ativar()` |
-| `0x135f8000` | Comando: `GPU Priority=8` em `Tasks\Games` | — (dado) |
-| `0x135f897c` | Comando: `HwSchMode=2` — habilita HAGS | — (dado) |
-| `0x135d70a0` | Comando: `Win32PrioritySeparation=38` — fatia de CPU para 1º plano | — (dado) |
-| `0x136c1e50` | Item de perfil `NVIDIABOOST` — configura Painel NVIDIA para máx. desempenho | — (dado) |
-| `0x136697f4` | Item `gpu_directx` — limpa DXCache / GLCache da NVIDIA | — (dado) |
-| `0x13669bbc` | Item `gpu_nvidia` — otimizações NVIDIA | — (dado) |
-| `0x13669ea0` | Item `gpu_amd`   — otimizações AMD | — (dado) |
-| `0x1366a098` | Item `gpu_intel` — otimizações Intel | — (dado) |
-| `0x136c56bc` | String "Os ajustes da GPU foram desligados…" (UI de desativação) | — (dado) |
-| `0x136c57f8` | String "Restaurando ajustes da GPU" (progresso de restauração) | — (dado) |
+| `0x135401d0` | Caminho absoluto do `powershell.exe` (Sysnative vs System32) | `resolver_caminho_powershell()` |
+
+**Point Blank e funcionalidades (`ponto_blank.c`)**
+
+| Endereço | Papel | Nome no C | § |
+|---|---|---|---|
+| `0x136f010c` | Procura a instalação do PB (caminhos fixos + drives C..Z) | `pb_encontrar_instalacao()` | 1 |
+| `0x135a0d84` | `taskkill /F /T` via `CreateProcessW` oculto | `pb_encerrar_processos()` | 2 |
+| `0x135a3cec` | Resolve ponteiros de API (kernel32/psapi/gdi32) | `pb_init_ponteiros_api()` | 3 |
+| `0x135a4dc4` | `SetPriorityClass(ABOVE_NORMAL)` no processo do PB | `pb_elevar_prioridade_cpu()` | 4 |
+| `0x135a6bdc` | Religa o priority boost dinâmico | `pb_elevar_priority_boost()` | 5 |
+| `0x135a56ec` | D3DKMT: classe ≤ NORMAL → ABOVE_NORMAL (3) | `pb_elevar_prioridade_gpu()` | 6 |
+| `0x1357c4d0` | MMCSS ("Pro Audio"/"Games"/"Playback") na thread de timer do **ReetFPS** | `pb_mmcss_configurar()` | 7 |
+| `0x1359f8b0` | Notificação diária de crashes (`pb-crash-yyyymmdd`) | `pb_verificar_crashes()` | 8 |
+| `0x13700af0` | Ativa o perfil FLUIDEZMAX | `pb_ativar_fluidezmax()` | 9 |
+| `0x137008d0` | `TReetGameModePanel.ExecuteGameModeActions` | `executar_itens_habilitados()` | 9 |
+| `0x136ec13c` | Monta a lista de recomendações (grupos Windows e PointBlank) | — | 9, 18 |
+| `0x136f78d0` | Despachante: chave da recomendação → botão `*_OFFClick` do `TGameBooster` | — | 9 |
+| `0x1357c9b0` | Inicia a thread "ReetTimerPrecision" (`TTPWatchdog`) | `pb_timer_resolution_ativar_manutencao()` | 10 |
+| `0x1357c5a4` | `NtSetTimerResolution(5000)`; `timeBeginPeriod(1)` só como fallback | `pb_timer_resolution_aplicar()` | 10 |
+| `0x1357c5e0` | Revoga o timer (e `timeEndPeriod` se o fallback foi usado) | `pb_timer_resolution_revogar()` | 10 |
+| `0x1357ca34` | Para a thread e revoga o timer | `pb_timer_resolution_parar()` | 10 |
+| `0x13673dc4` | Normaliza caminho para `\\?\` | `limpeza_normalizar_caminho()` | 11 |
+| `0x13673ee0` | Apaga um arquivo (com tomada de posse) | `limpeza_deletar_arquivo()` | 11 |
+| `0x13674090` | Varredura recursiva da limpeza (remove só o link em junções) | `limpeza_varrer_diretorio()` | 11 |
+| `0x135a50d8` | `SetProcessInformation` (classe 4: EcoQoS + TimerResolutionPolicy) no PB | `pb_configurar_timer_resolution()` | 12 |
+| `0x136951fc` | Desenha a pré-visualização da mira (6 cores, sombra) | `crosshair_desenhar()` | 13 |
+| `0x13694ab8` | Setter dos parâmetros da mira (clamp + repaint) | `crosshair_configurar_parametros()` | 13 |
+| `0x13696e3c` | Liga/desliga a sobreposição da mira (`vtable[0x188]` em `mgr+0x550`) | — | 13 |
+| `0x136b54d4` / `0x136b5704` | Teclado Turbo: ativar / restaurar | `pb_teclado_precisao_ativar()` / `_restaurar()` | 14 |
+| `0x135e9af4` / `0x135e9d98` | Blocos de 3 e 4 `reg add` de Keyboard Response | `teclado_bloco_ativar()` / `_restaurar()` | 14 |
+| `0x136b0798` | "Ajustes de desempenho" (lote de 35 comandos em `0x135f22f0`) | `pb_ajustes_desempenho_ativar()` | 15 |
+| `0x136b1f48` | Card do Game Bar | `pb_gamebar_desativar()` | 15 |
+| `0x136b383c` / `0x136b35fc` | Transparência: desliga / religa (toasts trocados no próprio binário) | `pb_interface_transparencia_desligar()` / `_religar()` | 16 |
+| `0x1372d4b8` | `INTERFACEDELAY_OFFClick` (card INTERFACEDELAY) | — | 16 |
+| `0x1369407c` | Aplica o preset de FPS (1..6) e grava `FPS_SELECTION_INDEX` no JSON | `pb_fps_definir_preset()` | 17 |
+| `0x13693740` | Clamp do preset: fora de [1,6] → 3 | `fps_clamp_preset()` | 17 |
+| `0x13693fec` | Grava o índice no JSON (`IntToStr` + `FUN_1369b158`) | `fps_preset_salvar()` | 17 |
+| `0x13728d20` | `MAPLOADING_OFFClick` (item LOADINGMAP) | `pb_loadingmap_ativar()` | 18 |
+| `0x13729094` / `0x13729410` | `MINIMAP_OFFClick` / `MINIMAP_ONClick` | `pb_minimap_off_ativar()` / `_desfazer()` | 19 |
+| `0x13582610` | TypeInfo de `TRPPBConfig` (lê/grava `EnvSet\env_settings.ini`) | — | 19 |
+| `0x135845f4` / `0x13585130` | `TRPPBConfig`: carregar / salvar o `.ini` | `pbconfig_carregar()` / `pbconfig_salvar()` | 19 |
+| `0x13600598` | **Reparo do sistema** (não tem relação com `TRPPBConfig`) | — | 19 |
+| `0x137294d8` / `0x13729524` | `FPSUNLOCKED_OFFClick` / `FPSUNLOCKED_ONClick` | `pb_desbloqueador_fps_ativar()` / `_restaurar()` | 20 |
+| `0x1372e888` / `0x1372ebb0` | `PRIORITYPB_OFFClick` / `PRIORITYPB_ONClick` | `pb_impulsionar_pb_ativar()` / `_restaurar()` | 21 |
+| `0x13727a5c` | Reset de 15 chaves e 20 globais da tela FPS Game Booster | `pb_game_booster_resetar_config()` | 21 |
+| `0x1372dfb0` / `0x1372e304` | `TELACHEIA_OFFClick` / `TELACHEIA_ONClick` (item FULLSCREEN) | `pb_fullscreen_ativar()` / — | 22 |
+| `0x135f7f88` / `0x135f8a60` | Lotes de 10 comandos da GPU: ativar / restaurar | `gpu_otimizacao_ativar()` / `_restaurar()` | 23 |
+| `0x136c1ad6` | ActRec de `TGPU_Utils.NVIDIABOOST_OFFClick` (importa `ReetFPS.nip`) | `gpu_nvidiaboost_aplicar()` | 23 |
+| `0x13734cd1` | `TGPURegistryWorker` (contadores PDH de uso/memória da GPU) | — | 23 |
+| `0x1361508c` | Desenho do botão "LOGIN"/"ENTRANDO..." | — (apenas UI) | — |
+| `0x1359474c` | Desenho do card "APLICAR PERFIL"/"PERFIL ATIVO" | — (apenas UI) | — |
 
 Estado global do login:
 
@@ -125,11 +122,13 @@ Estado global do login:
 ## Como a validação de login funciona (resumo)
 
 O handler lê os dois campos de texto do formulário (usuário em `+0x474`, senha
-em `+0x478`), guarda num registro de credenciais (usuário em `+0x10`, senha —
-campo `PasswordValue` — em `+0x0c`) e faz **apenas uma checagem local: os dois
-campos não podem estar vazios**. Se ok, desabilita a UI, mostra "ENTRANDO..." e
-dispara o worker que envia as credenciais ao servidor. **A conferência da senha
-é remota** — não há comparação de senha dentro do executável. Classes de rede
+em `+0x478`), aplica `Trim` só ao usuário (`FUN_1316c638`), guarda num registro
+de credenciais (usuário em `+0x10`, senha — campo `PasswordValue` — em `+0x0c`)
+e faz **apenas uma checagem local: os dois campos não podem estar vazios**. Se
+ok, oculta os botões de login, exibe o indicador de progresso (`+0x490`) e o
+rótulo de status (`+0x488`), e dispara o worker (uma `TTask`) que envia as
+credenciais ao servidor. **A conferência da senha é remota** — não há
+comparação de senha dentro do executável. Classes de rede
 presentes no binário: `System.Net.URLClient`, `TCredentialsStorage`,
 `TIdHTTP`/`TIdAuthentication`.
 
