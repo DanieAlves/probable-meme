@@ -1,13 +1,17 @@
 # ReetFPS × Point Blank — o que o programa faz referente ao jogo
 
-Adendo ao `README.md` e ao `reetfps.c`. Documenta, em alto nível, o que o
-ReetFPS faz especificamente com o Point Blank — além dos 559 ajustes de
-Windows do catálogo.
+Adendo ao `README.md`, ao `reetfps.c` e ao `ponto_blank.c`. Documenta, em
+alto nível, o que o ReetFPS faz especificamente com o Point Blank e com as
+funcionalidades da sua tela — além dos 559 ajustes de Windows do catálogo.
 
 A documentação aqui descreve **comportamento observado** no binário via
-decompilação (nomes de classes RTTI, strings de UI, imports da PE, labels
-de telemetria interna do próprio programa). **Não há reconstrução passo a
-passo das rotinas sensíveis** (ver "Nota sobre reconstrução", no fim).
+decompilação e desmontagem (nomes de classes e métodos publicados na RTTI,
+strings de UI, imports da PE, labels de telemetria interna do próprio
+programa). O que não foi comprovado está marcado como **INFERIDO**. Muitos
+textos do programa são **strings ofuscadas** (decodificadas em tempo de
+execução por `FUN_134a8d98`) e por isso não aparecem em claro aqui. As
+rotinas sensíveis não têm reconstrução passo a passo (ver "Nota sobre
+reconstrução", no fim).
 
 ---
 
@@ -15,18 +19,17 @@ passo das rotinas sensíveis** (ver "Nota sobre reconstrução", no fim).
 
 Para alinhar expectativas:
 
-- **Não altera arquivos do Point Blank em disco.** Não há no binário rotinas
-  de patching de `.exe`/`.dll`/`.pak`/arquivos de recurso do jogo, nem
-  strings de nomes de arquivos do jogo além do `PBLauncher.exe` (que ele
-  só *localiza* e *inicia*).
-- **Não modifica configuração interna do jogo** (não escreve em `.ini` do
-  jogo, não altera arquivos de perfil, não mexe em pastas como `Shader/` — ao
-  contrário, orienta o jogador a abrir o PBLauncher e usar o botão "Check"
-  quando essa pasta estiver inconsistente).
+- **Não altera binários do Point Blank em disco.** Não há no binário rotinas
+  de patching de `.exe`/`.dll`/`.pak`/arquivos de recurso do jogo. Do
+  launcher, ele só *localiza* e *inicia* o `PBLauncher.exe`.
+- **Nenhuma funcionalidade analisada escreve no processo do jogo**, a não ser
+  os ajustes de prioridade de CPU/GPU e de energia descritos em 2.5 e 2.9.
 
-Essas duas negativas são importantes: todo o impacto do ReetFPS no FPS vem de
-**ajustes do Windows** aplicados *em volta* do jogo, não de alterações
-*dentro* do jogo.
+Ressalva sobre a configuração do jogo: o binário contém a classe
+`TRPPBConfig`, que **lê e grava** `<pasta do jogo>\EnvSet\env_settings.ini`
+(`FUN_135845f4` / `FUN_13585130`). Nenhum dos handlers analisados a chama,
+e quem dispara a gravação **não foi rastreado**. Por isso não dá para afirmar
+nem que o ReetFPS altera, nem que não altera esse arquivo.
 
 ## 2. O que o ReetFPS FAZ com o jogo
 
@@ -55,7 +58,8 @@ com a arquitetura do Point Blank, em que o launcher gerencia atualização e
 proteção antes de abrir o cliente.
 
 Um botão com o rótulo `"ABRIR O PBLAUNCHER"` existe na interface para o caso
-de o início automático falhar.
+de o início automático falhar. Na tela FPS Game Booster, o botão de iniciar o
+jogo é `BUTTON_STARTPBClick` (`0x13730064`, não reconstruído).
 
 ### 2.3. Encerra os processos do jogo quando pede
 
@@ -66,8 +70,6 @@ Strings de UI que acompanham:
 - `"Os processos do PointBlank foram encerrados. Pode abrir o jogo de novo."`
 - `"O jogo fechou, mas o processo continua aberto. Abra para encerrar."`
 - `"Processo %s encerrado"`
-
-É o botão de "fechar jogo travado" / "resetar sessão". Nada mais exótico.
 
 ### 2.4. Monitora estabilidade do jogo (telemetria interna do ReetFPS)
 
@@ -81,39 +83,33 @@ Classes RTTI presentes no binário (todas internas ao ReetFPS, não ao jogo):
   / `TPointBlankCrashVerificationResult` → verifica se o encerramento foi
   um crash e classifica.
 
-String correspondente da UI:
+Com mais de 2 encerramentos no dia, `FUN_1359f8b0` publica **uma**
+notificação por dia (chave `"pb-crash-"` + `yyyymmdd`, título
+`"O PointBlank fechou várias vezes"`), com os textos:
 
-- `"Detectamos %d encerramentos inesperados do PointBlank hoje."`
 - `"%d encerramentos inesperados hoje. Veja como reparar."`
-
-Isso é instrumentação própria do ReetFPS — ele conta quantas vezes o jogo
-caiu e sugere passos de reparo (checar pasta `Shader/`, usar `Check` no
-PBLauncher). Não é ingerência no jogo.
+- `"Detectamos %d encerramentos inesperados do PointBlank hoje. Abra esta notificação para ver as recomendações de reparação."`
 
 ### 2.5. Eleva a prioridade do processo do jogo
 
-Function `FUN_135a4dc4` (reconstruída integralmente em `reetfps.c`):
+Funções do módulo de manutenção (`ponto_blank.c` §3–§6), todas sobre o
+processo do Point Blank:
 
-- Chama `GetPriorityClass(hProcesso)` → guarda a prioridade original em
-  `+0x8d0` do contexto.
-- Se a prioridade **não** for `REALTIME` (`0x100`), `HIGH` (`0x80`) nem
-  `ABOVE_NORMAL` (`0x8000`), chama `SetPriorityClass(hProcesso, ABOVE_NORMAL)`.
-- Em caso de erro, loga `"GetPriorityClass"` / `"SetPriorityClass.AboveNormal"`
-  com `GetLastError()`.
+| Função | Endereço | O que faz |
+|---|---|---|
+| `pb_elevar_prioridade_cpu` | `0x135a4dc4` | Guarda a classe atual; se não for `ABOVE_NORMAL`/`HIGH`/`REALTIME`, aplica `ABOVE_NORMAL` |
+| `pb_elevar_priority_boost` | `0x135a6bdc` | Se o boost dinâmico estiver desligado, religa (`SetProcessPriorityBoost(h, FALSE)`) |
+| `pb_elevar_prioridade_gpu` | `0x135a56ec` | `D3DKMTSetProcessSchedulingPriorityClass`: se a classe atual for ≤ `NORMAL` (2), pede `ABOVE_NORMAL` (3) |
+| `pb_configurar_timer_resolution` | `0x135a50d8` | `SetProcessInformation` classe 4 (`ProcessPowerThrottling`): desliga EcoQoS e a política de timer (ver 2.9) |
 
-Esse é o único "ajuste direto no processo do jogo" na faixa de rotinas que
-pude confirmar com segurança: eleva o `PriorityClass` e guarda o valor
-anterior para restaurar.
+Strings de log: `"GetPriorityClass"`, `"SetPriorityClass.AboveNormal"`,
+`"Maintain.GetProcessPriorityBoost"`, `"Maintain.SetProcessPriorityBoost.Enable"`,
+`"D3DKMTSetProcessSchedulingPriorityClass.AboveNormal"`.
 
-Rotinas análogas no mesmo módulo (`uMaintain`, strings
-`"Maintain.GetProcessPriorityBoost"`, `"Maintain.SetProcessPriorityBoost.Enable"`):
-
-- `Set/GetProcessPriorityBoost` — habilita o boost dinâmico de prioridade da
-  Windows API no processo do jogo.
-- `AvSetMmThreadPriority` (via MMCSS) — eleva prioridade de thread em um
-  perfil multimídia (classe "Games" do MMCSS).
-- `D3DKMTSetProcessSchedulingPriorityClass` — eleva a classe de agendamento
-  da GPU (DWM/GPU scheduler) para o processo.
+**O MMCSS não entra aqui.** `AvSetMmThreadCharacteristicsW` ("Pro Audio" →
+"Games" → "Playback") e `AvSetMmThreadPriority` são aplicados à thread
+`ReetTimerPrecision` **do próprio ReetFPS** (`0x1357c4d0`, chamada pelo
+Execute em `0x1357c88c`), não ao processo do jogo.
 
 ### 2.6. "Pausar/retomar" o Windows Update enquanto você joga
 
@@ -123,10 +119,9 @@ Strings:
 - `"Não foi possível gravar a pausa. Execute o ReetFPS como administrador."`
 - `"Não foi possível remover a pausa. Execute o ReetFPS como administrador."`
 
-Isso é independente do jogo em si: o ReetFPS adia o Windows Update para
-evitar que ele consuma CPU/disco durante a partida. Implementado via
-registros de política do WU (parte do catálogo `OTHER` em
-`catalogo_comandos.md`).
+O ReetFPS adia o Windows Update para evitar que ele consuma CPU/disco durante
+a partida. **INFERIDO:** implementado via registros de política do WU (parte do
+catálogo `OTHER` em `catalogo_comandos.md`).
 
 ### 2.7. Gerenciamento inteligente (ativado por usuário)
 
@@ -135,203 +130,262 @@ String:
 - `"Gestão Inteligente ativada. O ReetFPS passa a gerenciar o desempenho do Point Blank automaticamente."`
 
 Quando ligado, o ReetFPS roda o `TPointBlankStabilityMonitor` em segundo plano:
-detecta o processo do jogo subir, aplica o perfil de energia / prioridade,
-e no encerramento do jogo reverte. É a razão de existirem os pares
-"aplicar/reverter" no catálogo de comandos.
+detecta o processo do jogo subir, aplica a prioridade (2.5) e, no
+encerramento do jogo, reverte. **INFERIDO:** que também aplique o perfil de
+energia do catálogo nesse momento.
 
-### 2.8. Perfil FLUIDEZMAX — "Carregamento de mapa otimizado"
+### 2.8. Lista de recomendações, FLUIDEZMAX e a tela FPS Game Booster
 
-O botão FLUIDEZMAX na tela de Game Mode ativa um **perfil de sete itens** que
-trabalham em conjunto. Não há uma API de "preload de mapa" — o efeito de
-carregamento rápido é o resultado combinado de eliminar competição por
-recursos.
+`FUN_136ec13c` monta a **lista de recomendações** em dois grupos. Cada item tem
+chave, rótulo, ícone e descrição (os rótulos abaixo são textos da UI):
 
-#### Itens do perfil (tabela em 0x136ecb00)
-
-| # | Chave | Label UI | Efeito |
+| Grupo | Chave | Rótulo | Ícone |
 |---|---|---|---|
-| 0 | `FLUIDEZMAX` | — | **Cabeçalho do perfil**; nome exibido: "Carregamento de mapa otimizado" |
-| 1 | `fullscreen` | FULLSCREEN | Força o PB em **fullscreen exclusivo** — DWM desativado → menos pressão de GPU/VRAM durante loading |
-| 2 | `OTIMIZER_PB_MANAGER` | — | Ativa o `TPointBlankStabilityMonitor` (gerenciador automático) |
-| 3 | `smart` | Gestão Inteligente | Liga modo automático: monitor aplica/reverte tweaks no ciclo de vida do jogo |
-| 4 | `PRIORITYPB` | rocket | Aplica as três camadas de prioridade: CPU (`ABOVE_NORMAL`), D3DKMT GPU scheduler, e Priority Boost |
-| 5 | `INTERFACE` | window | Configura o modo de janela/interface do PB conforme perfil recomendado |
-| 6 | `FPS_SELECTION_INDEX` | speed | Lê o índice de FPS do INI do PB (`[Graphics] FPSType/FPSVal`) e aplica o cap correto |
-| 7 | `REETGAMEMODE` | gamepad | Habilita **Windows Game Mode** → maior prioridade de I/O e CPU no scheduler do Windows |
+| Windows | `Energia_ON` | "Windows Turbo +FPS" | bolt |
+| Windows | `Hibernate_ON`, `Cortana_ON`, `TarefaTelemetria_ON`, `Superfetch_ON`, `ADMENU_ON`, `OpMouse_ON` | (desativar hibernação, Cortana, telemetria, Superfetch, …; "Otimizar mouse") | — |
+| PointBlank | `FLUIDEZMAX` | "Fluidez máxima" | bolt |
+| PointBlank | `LOADINGMAP` | "Carregamento de mapa otimizado" | clock |
+| PointBlank | `FULLSCREEN` | "Tela cheia otimizada" | fullscreen |
+| PointBlank | `OPTIMIZER_PB_MANAGER` | "Otimização Inteligente" | smart |
+| PointBlank | `PRIORITYPB` | "Prioridade do PointBlank" | rocket |
+| PointBlank | `INTERFACE` | "Interface otimizada" | window |
+| PointBlank | `FPS_SELECTION_INDEX` | "FPS recomendado" | speed |
+| PointBlank | `REETGAMEMODE` | "Game Mode ReetFPS" | gamepad |
 
-#### Por que os mapas carregam "instantaneamente"
+As chaves do grupo PointBlank passam pelo **despachante** em `0x136f78d0`, que
+"clica" no botão `*_OFF` do card correspondente da tela **FPS Game Booster**
+(form `TGameBooster`). Os nomes vêm da tabela de métodos publicados do form:
 
-| Mecanismo | Por que ajuda |
-|---|---|
-| Fullscreen exclusivo | DWM para de compor → GPU e VRAM livres para assets do mapa |
-| Prioridade CPU `ABOVE_NORMAL` + Priority Boost | Mais tempo de CPU durante I/O intenso de loading |
-| D3DKMT GPU scheduler | GPU processa as texturas com mais prioridade |
-| Windows Game Mode | I/O scheduler prioriza as leituras de disco do PB |
-| Gestão Inteligente | Todos os 559 tweaks da categoria CPU_GPU_PRIORITY e POWER ativados exatamente quando o PB está subindo |
+| Chave | Handler | Método publicado | Ver |
+|---|---|---|---|
+| `FLUIDEZMAX` / `FLUIDEZMAXIMA` | `0x1372a03c` | `GRAPHIC_OFFClick` | — (não analisado) |
+| `FULLSCREEN` | `0x1372dfb0` | `TELACHEIA_OFFClick` | 2.18 |
+| `OPTIMIZER_PB_MANAGER` | `0x13729094` | `MINIMAP_OFFClick` | 2.15 |
+| `FPS_SELECTION_INDEX` | `0x137294d8` | `FPSUNLOCKED_OFFClick` | 2.16 |
+| `PRIORITYPB` | `0x1372e888` | `PRIORITYPB_OFFClick` | 2.17 |
+| `LOADINGMAP` | `0x13728d20` | `MAPLOADING_OFFClick` | 2.14 |
+| `INTERFACE` | `0x1372d4b8` | `INTERFACEDELAY_OFFClick` | 2.12 |
+| `REETGAMEMODE` | `0x1372c00c` | `ReetFPSSettingsPanel1Categories3Items2ToggleOn` | — (não analisado) |
 
-#### Itens separados: limpeza de cache (opcionais, não são parte do FLUIDEZMAX)
+O binário é assim: a chave `OPTIMIZER_PB_MANAGER` cai no botão `MINIMAP_OFF`.
+O motivo do nome não é conhecido.
 
-Há uma tabela separada de "limpadores" em `0x1366c900` que aparecem como
-opções na mesma tela mas **não fazem parte do FLUIDEZMAX**:
+**Padrão dos cards.** Os handlers `INTERFACEDELAY`, `MAPLOADING`, `MINIMAP` e
+`TELACHEIA` `*_OFFClick` fazem a mesma coisa:
 
-| Chave | Alvo | Aviso |
-|---|---|---|
-| `prefetch` | `%WINDIR%\Prefetch` (apaga os `.pf` do prefetcher) | "Seguro, mas programas podem abrir mais devagar na primeira vez" |
-| `driver_extract_cache` | `%SystemDrive%\NVIDIA\DisplayDriver\*` (cache de extração de drivers NVIDIA) | "Seguro..." |
+1. verificam se o jogo está aberto;
+2. gravam um par chave/valor **cifrado** no store JSON de configurações
+   (`FUN_1369b158`);
+3. trocam os botões do card;
+4. chamam `vtable[0x188]` de um controle do overlay (**INFERIDO**: setter
+   `Checked`);
+5. mostram um card de notificação.
 
-A limpeza de Prefetch remove dados obsoletos do prefetcher do Windows (que
-os tweaks do catálogo já desabilitam via `reg add PrefetchParameters`). É
-um passo complementar, não a causa principal do loading rápido.
+Eles **não executam comandos nem tocam o jogo**. Quem lê essas chaves e aplica
+o efeito real **não foi rastreado**.
 
-#### Execução (fluxo técnico)
+**FLUIDEZMAX** em si (`pb_ativar_fluidezmax`, `0x13700af0`) marca o perfil
+como ativo e chama `TReetGameModePanel.ExecuteGameModeActions` (`0x137008d0`).
+Essa função copia os itens habilitados de `panel+0x2e0` para um array e os
+despacha numa task. **INFERIDO:** que essa lista seja a mesma das recomendações
+(os offsets diferem).
 
-```
-pb_ativar_fluidezmax()          @ 0x13700af0
-  └─ perfil_marcar_ativo()      @ 0x13700b24  (flag "ativo" no painel)
-  └─ ExecuteGameModeActions()   @ 0x137008d0  (TReetGameModePanel)
-       ├─ itera lista de itens em panel+0x2e0
-       ├─ filtra item->habilitado (+0x24)
-       ├─ copia (chave, icone, descricao) para array
-       ├─ cria dialog de progresso
-       └─ FUN_13219b0c / FUN_1321a804 — despacha em thread separada
-  └─ panel->+0x38e = 1           (flag "fluidezmax aplicado")
-```
+### 2.9. Timer Resolution — reduzir latência para 0.5 ms
 
-### 2.9. Timer Resolution — reduzir latência para 0.5ms
-
-O botão **TIMER RESOLUTION** ativa três camadas em conjunto:
-
-#### Camada 1 — NtSetTimerResolution (global, todo o sistema)
+#### Camada 1 — NtSetTimerResolution (global)
 
 | | |
 |---|---|
-| API | `NtSetTimerResolution` (ntdll.dll, não documentada) |
-| Valor | 5000 × 100ns = **0.5ms** (padrão Windows: ~15.6ms = 156001 unidades) |
-| Complemento | `timeBeginPeriod(1)` — equivalente Win32 de 1ms |
-| Thunk | `0x1357c294` (Ghidra reconhece pelo nome) |
+| API | `NtSetTimerResolution` (ntdll.dll, não documentada), thunk `0x1357c294` |
+| Valor | 5000 × 100 ns = **0.5 ms** |
+| Fallback | `timeBeginPeriod(1)` **só** se `NtSetTimerResolution` falhar (flag `DAT_1380f238`) |
+| Rotina | `0x1357c5a4` (`pb_timer_resolution_aplicar`) |
 
 #### Camada 2 — Thread de manutenção ("ReetTimerPrecision")
 
-O Windows pode restaurar o timer quando outros processos que pediram alta resolução saem. Para evitar isso, o ReetFPS mantém um thread de fundo que **re-aplica** o `NtSetTimerResolution(5000)` continuamente enquanto o recurso estiver ativo.
-
 | Função | Endereço | Papel |
 |---|---|---|
-| `pb_timer_resolution_ativar_manutencao` | `0x1357c9b0` | Cria e inicia a thread |
-| `pb_timer_resolution_parar` | `0x1357ca34` | Para a thread e reverte |
-| `pb_timer_resolution_revogar` | `0x1357c5e0` | Revert: `NtSetTimerResolution(0, FALSE, ...)` + `timeEndPeriod(1)` |
+| `pb_timer_resolution_ativar_manutencao` | `0x1357c9b0` | Cria a thread (`TTPWatchdog`, VMT `0x1357c804`) |
+| `pb_timer_resolution_parar` | `0x1357ca34` | Para a thread e revoga o timer |
+| `pb_timer_resolution_revogar` | `0x1357c5e0` | `NtSetTimerResolution(0, FALSE)`; `timeEndPeriod(1)` só se o fallback foi usado |
 
-Nome interno da thread (string `0x1357c870`): `"ReetTimerPrecision"`  
-Log de propósito (string `0x1357c40c`): `"Maintain 0.5ms timer for low latency"`
+Nome interno da thread: `"ReetTimerPrecision"` (`0x1357c870`). Log:
+`"Maintain 0.5ms timer for low latency"` (`0x1357c40c`). A thread registra a si
+mesma no MMCSS (2.5). **INFERIDO:** que ela reaplique o timer periodicamente.
 
-#### Camada 3 — SetProcessInformation / TimerResolutionPolicy (Windows 11)
+#### Camada 3 — SetProcessInformation (Windows 11)
 
-No Windows 11, um processo pode declarar que vai "ignorar" a resolução global de timer. O ReetFPS **limpa esse flag** no processo do Point Blank para garantir que o jogo responda ao 0.5ms global. Função: `FUN_135a50d8` (`0x135a50d8`), que também desativa EcoQoS no mesmo passo.
+`FUN_135a50d8` usa `SetProcessInformation(ProcessPowerThrottling = 4)` no
+processo do Point Blank. Cada passo só roda se a flag de configuração
+correspondente estiver ligada e se uma leitura prévia (`GetProcessInformation`)
+mostrar que ainda é necessário:
 
 | Campo | Valor | Efeito |
 |---|---|---|
-| `ControlMask = 0x01` (EcoQoS) | `StateMask = 0` | Desativa throttling de execução |
-| `ControlMask = 0x04` (IGNORE_TIMER_RESOLUTION) | `StateMask = 0` | Faz o processo respeitar o timer global de 0.5ms |
-
-Strings de log confirmadas no binário: `"GetProcessInformation.TimerResolution.Pre"`, `"SetProcessInformation.TimerResolutionPolicy"`.
+| `ControlMask` bit EcoQoS | `StateMask` = 0 | Desliga o throttling de execução |
+| `ControlMask` bit IGNORE_TIMER_RESOLUTION | `StateMask` = 0 | O processo passa a respeitar o timer global |
 
 ### 2.10. Limpeza Inteligente — apaga caches com segurança
 
-A "Limpeza Inteligente" é um varredor recursivo de diretórios com três camadas de proteção que apaga arquivos temporários/cache do Windows e de drivers.
+Itens (tabela em `0x1366c900`):
 
-#### Itens de limpeza (tabela em `0x1366c900`)
-
-| Chave | Alvo expandido | Descrição |
-|---|---|---|
-| `prefetch` | `%WINDIR%\Prefetch\*.pf` | Apaga arquivos do prefetcher do Windows |
-| `driver_extract_cache` | `%SystemDrive%\NVIDIA\DisplayDriver\*` | Apaga cache de extração de drivers NVIDIA |
-
-#### Camadas de segurança
-
-| Mecanismo | Implementação |
+| Chave | Alvo |
 |---|---|
-| Bloqueio de juncão/symlink | `FUN_13674088` testa `FILE_ATTRIBUTE_REPARSE_POINT` antes de recursão |
-| Caminhos longos | `FUN_13673dc4` prepende `\\?\` — sem limite de MAX_PATH |
-| Reporte de falha granular | Distingue: negado (`ERROR_ACCESS_DENIED`), em-uso (`ERROR_SHARING_VIOLATION`), e outros |
+| `prefetch` | `"%WINDIR%\Prefetch"` (`0x1366ca58`) — conteúdo do diretório |
+| `driver_extract_cache` | `%SystemDrive%\NVIDIA\DisplayDriver\*` |
 
-#### Funções mapeadas
+Proteções da varredura (`limpeza_varrer_diretorio`, `0x13674090`):
 
-| Função | Endereço | Papel |
-|---|---|---|
-| `limpeza_varrer_diretorio` | `0x13674090` | Scanner recursivo: FindFirstFileW → loop → FindNextFileW |
-| `limpeza_deletar_arquivo` | `0x13673ee0` | DeleteFileW com tentativa de posse (`FUN_136712f0`) |
-| `limpeza_normalizar_caminho` | `0x13673dc4` | Adiciona prefixo `\\?\` para caminhos longos |
-| `limpeza_e_juncao_symlink` | `0x13674088` | Testa `FILE_ATTRIBUTE_REPARSE_POINT` |
+- Caminhos longos com o prefixo `\\?\` (`FUN_13673dc4`), inclusive no padrão de busca.
+- Junções/symlinks (`FILE_ATTRIBUTE_REPARSE_POINT`): remove **só o link**
+  (`FUN_13673fb4`), sem entrar nele. Falha apenas se essa remoção falhar.
+- Cancelamento verificado no início e a cada entrada.
+- Apagar arquivo com tentativa de tomar posse (`FUN_13673ee0`, `FUN_136712f0`).
+- Falhas classificadas em negado (`ERROR_ACCESS_DENIED`), em uso
+  (`ERROR_SHARING_VIOLATION`) e outras.
 
-#### Estrutura de estatísticas (`TLimpezaStats`, retornada por `FUN_13153234`)
+Estatísticas (`FUN_13153234`): `+0x5c` negado, `+0x5d` em uso, `+0x5e`
+deletado, `+0x60` falhas, `+0x70` arquivos, `+0x78` pastas e `+0x80` bytes.
 
-| Offset | Campo | Significado |
-|---|---|---|
-| `+0x5c` | `negado_acesso` | Ao menos um arquivo teve `ERROR_ACCESS_DENIED` |
-| `+0x5d` | `arquivo_em_uso` | Ao menos um arquivo estava aberto |
-| `+0x5e` | `deletado` | Ao menos um arquivo foi removido com sucesso |
-| `+0x60` | `qtd_falhas` | Contador acumulado de falhas |
-| `+0x70`/`0x74` | `qtd_arquivos` | Arquivos deletados (64 bits) |
-| `+0x78`/`0x7c` | `qtd_pastas` | Sub-pastas percorridas |
-| `+0x80`/`0x84` | `bytes_totais` | Bytes liberados (64 bits) |
+### 2.11. Miras Customizadas
 
-String de status final: `"Limpeza coordenada: itens preservados (negado=%s, em uso=%s, protecao=%s)"` @ `0x13673d30`.
+Classes: `TRPCrosshair` (`0x136945ef`) e o formulário `UDialogCrosshair`
+(`0x13696e21`).
 
----
+| Offset | Campo |
+|---|---|
+| `+0x310` | comprimento de cada braço |
+| `+0x314` | espaçamento do centro ao braço |
+| `+0x318` | lado do quadrado central (0 = sem quadrado) |
+| `+0x334` | **índice de cor** 1..6 (tabela em `0x1380f738`) |
+| `+0x338` | sombra ativa |
 
-### 2.11. Miras Customizadas — crosshair sobreposta ao jogo
+Cores (`0x1380f738`): vermelho, verde, violeta, azul, amarelo, branco.
 
-O ReetFPS desenha uma mira personalizada em uma janela transparente sobre o Point Blank. A mira não altera arquivos do jogo — é uma sobreposição feita com GDI/DirectDraw.
+`crosshair_desenhar` (`0x136951fc`) faz duas passadas: a passada 0 é a sombra,
+em `0xe6000000`, só com `+0x338`; a passada 1 é o corpo. Cada passada desenha
+o contorno do quadrado central e os 4 braços. **INFERIDO:** que esta função
+pinte a **pré-visualização**; a sobreposição no jogo é ligada/desligada por
+`FUN_13696e3c`. O setter dos parâmetros é `FUN_13694ab8`, com clamp e repaint.
 
-#### Classes RTTI
+### 2.12. Interface Sem Delay
 
-| Classe | Endereço RTTI | Papel |
-|---|---|---|
-| `TRPCrosshair` | `0x136945ef` | Classe principal (dados + lógica de desenho) |
-| `UDialogCrosshair` | `0x13696e21` | Formulário de configuração |
+Duas peças comprovadas, cuja ligação com o nome da funcionalidade é **INFERIDA**:
 
-#### Strings de UI
+- **Toggle de transparência** (`0x136b383c` desliga e `0x136b35fc` religa): cada
+  um roda 6 `reg add` (transparência, OLED taskbar, miniaturas do DWM,
+  ColorPrevalence). Os **toasts estão trocados no próprio ReetFPS**: quem
+  desliga a transparência mostra "ativada".
+- **Card INTERFACEDELAY** (`0x1372d4b8`): segue o padrão dos cards (2.8),
+  gravando dois pares cifrados e removendo uma chave.
 
-| String | Endereço | Descrição |
-|---|---|---|
-| `"PERSONALIZAR MIRA"` | `0x13694a94` | Botão que abre o diálogo |
-| `"TAMANHO DA LINHA"` | `0x1369491c` | Controle de espessura |
-| `"QUADRADO CENTRAL"` | `0x13694970` | Tipo de forma: quadrado central |
-| `"Exibir sombra na mira"` | `0x13695f50` | Checkbox de sombra |
-| `"COR DA MIRA"` | `0x13695f88` | Seletor de cor |
-| `"CROSSHAIR_SHADOW"` | `0x13696f1c` | Chave de configuração para sombra |
+`VisualFXSetting`: no Windows, 0 = deixar o Windows escolher, 1 = melhor
+aparência e 2 = melhor desempenho. O ReetFPS usa 2 no lote "Ajustes de
+desempenho" (2.13).
 
-#### Estrutura `TRPCrosshair` (offsets confirmados via `FUN_136951fc`)
+### 2.13. Entrada Instantânea
 
-| Offset | Campo | Descrição |
-|---|---|---|
-| `+0x318` | `quantidade_linhas` | Espessura — número de repetições por segmento |
-| `+0x334` | `indice_forma` | Índice da forma (0 = QUADRADO CENTRAL, …) |
-| `+0x338` | `sombra_ativa` | Bool: exibir sombra sob a mira |
+O binário **não** contém o rótulo "ENTRADA INSTANTÂNEA"; a associação é
+**INFERIDA** pelo texto dos toasts.
 
-#### Funções mapeadas
+- **"Ajustes de desempenho aplicados!"** (handler `0x136b0798`): lote de 35
+  comandos (`0x135f22f0`) com `VisualFXSetting=2`, `powercfg` (SCHEME_MIN e
+  PERFBOOST), parada de serviços (DiagTrack, SysMain, DoSvc…), `MenuShowDelay`,
+  timeouts, apps em segundo plano e Windows Update.
+- **Game Bar** (`0x136b1f48`): conforme o valor lido, abre um diálogo
+  (retorno 7, significado não recuperado) ou grava o estado e mostra
+  "Game Bar desativada!".
+- A tarefa MMCSS **"Low Latency"** (Clock Rate 10000 = 1 ms, GPU Priority 8,
+  …) existe só como entrada de um lote de 232 comandos (`TweaksAll`), não como
+  função própria.
 
-| Função | Endereço | Papel |
-|---|---|---|
-| `crosshair_desenhar` | `0x136951fc` | Renderiza a mira no canvas a cada repaint |
-| `crosshair_desenhar_segmento` | `0x13695114` | Desenha um dos 4 segmentos (N/S/L/O) |
-| `crosshair_obter_dimensoes` | `0x13694bf0` | Lê largura/altura do canvas |
+### 2.14. Mapas Instantâneos
 
-#### Cores usadas (ARGB)
+É o item `LOADINGMAP` ("Carregamento de mapa otimizado") → card `MAPLOADING`
+(`0x13728d20`). Segue o padrão dos cards (2.8). A ligação com caches do
+LanmanWorkstation ou SysMain, feita em versões anteriores, **não foi
+comprovada** e foi retirada.
 
-| Constante | Valor | Cor |
-|---|---|---|
-| Background | `0xff04050b` | Quase preto (transparente) |
-| Contorno | `0xff14172e` | Azul navy escuro |
+### 2.15. Mini-Map Off
+
+É o card `MINIMAP` da tela FPS Game Booster: `MINIMAP_OFFClick` (`0x13729094`)
+e `MINIMAP_ONClick` (`0x13729410`), com os botões em `Self+0x590` e `+0x58c`.
+
+- Ligar grava um par cifrado no JSON, troca os botões, chama
+  `vtable[0x188](mgr+0x510, 1)` e mostra um card (título e 3 linhas cifradas,
+  ícone `icon.png`).
+- Desligar remove a chave.
+
+Nenhum dos dois escreve no `env_settings.ini`. A chave
+`[Game] Enable_MissionIndicator` do `TRPPBConfig` existe, mas **não há prova**
+de que este card a use.
+
+### 2.16. FPS Ilimitado e Desbloqueador de FPS
+
+- **FPS Ilimitado** = form `TUNLOCK_FPS` ("UNLOCKEDFPS" é o nome da *unit*,
+  não um valor). Ele escolhe um preset de 1 a 6 (`FUN_1369407c`; fora do
+  intervalo vale 3) e grava `FPS_SELECTION_INDEX` no **store JSON** de
+  configurações, não no registro nem no INI.
+  - "FPS 486" é só um rótulo de pré-visualização.
+  - **Onde o FPS chega ao jogo não foi localizado.** `FPSType`/`FPSVal`
+    existem no `TRPPBConfig`, mas nada os liga ao índice escolhido.
+- **Desbloqueador** = botões `FPSUNLOCKED_OFF/ON` (`0x137294d8` / `0x13729524`).
+  - Ligar abre um formulário (**INFERIDO**: o de presets).
+  - Desligar zera o controle do preset, remove uma chave e oculta os rótulos.
+
+### 2.17. Impulsionar PointBlank
+
+**INFERIDO**: corresponde aos botões `PRIORITYPB_OFF/ON` (`0x1372e888` /
+`0x1372ebb0`), também chamados pelo item "Prioridade do PointBlank".
+
+- Ligar define a flag global `_DAT_138103f8 = -1`, grava um par cifrado e
+  mostra um card. Desligar zera a flag e remove a chave.
+- Quem lê a flag não foi localizado.
+- `FUN_13727a5c` é um reset de 15 chaves e 20 globais da tela.
+
+### 2.18. Full Screen
+
+É o item `FULLSCREEN` → `TELACHEIA_OFFClick` (`0x1372dfb0`), seguindo o padrão
+dos cards. Antes, o handler seleciona a célula (1,3) da grade e desliga uma
+opção concorrente. O handler **não** toca o `TRPPBConfig` nem o `ScreenMode`
+(`+0x4f8`).
+
+### 2.19. Otimização GPU
+
+- **Lote de ativação** (`0x135f7f88`, 10 comandos): `GPU Priority=8` e
+  `Priority=6` em `Tasks\Games`, `SystemResponsiveness=0`, GameDVR/AppCapture
+  desligados, `TcpAckFrequency=1`, `TCPNoDelay=1` e `HwSchMode=2` (HAGS). Os
+  dois de rede estão na tabela da GPU.
+- **Restauração**: espelho em `0x135f8a60`.
+- **NVIDIABOOST**: importa o perfil `ReetFPS.nip` com
+  `nvidiaProfileInspector.exe -importProfile`. O conteúdo do `.nip` não está
+  visível.
+- `TGPURegistryWorker` lê os contadores PDH de uso e memória dedicada da GPU.
+
+### 2.20. Teclado de Precisão ("Teclado Turbo")
+
+Os handlers ficam em `0x136b54d4` (ativar) e `0x136b5704` (restaurar). Cada um
+grava um estado (valor 1 ou 0) via TRegistry, troca os botões e roda um bloco
+de `reg add` em `HKCU\Control Panel\Accessibility\Keyboard Response`:
+
+| Bloco | Comandos |
+|---|---|
+| Ativar | `Flags=0` (FilterKeys desligado), `AutoRepeatDelay=250`, `AutoRepeatRate=20` |
+| Restaurar | `AutoRepeatDelay=300`, `AutoRepeatRate=45`, `BounceTime=0`, `Flags=2` |
+
+O toast é "Teclado Turbo ativado!". **Não há** checagem de teclado HID antes
+dos comandos, e o MouseKeys pertence a outro lote, de comandos de mouse.
 
 ---
 
 ## 3. Resumo em uma linha
 
-> O ReetFPS **não toca em arquivos nem no estado interno do Point Blank**.
-> O que ele faz com o jogo é: **achar a instalação, iniciá-lo via PBLauncher,
-> elevar prioridade de CPU/GPU/MMCSS do processo, monitorar estabilidade,
-> encerrá-lo por `taskkill` sob demanda, e aplicar/reverter os 559 ajustes
-> de Windows em torno da sessão de jogo.**
+> Com o processo do jogo, o ReetFPS **acha a instalação, inicia via
+> PBLauncher, eleva a prioridade de CPU/GPU e desliga o EcoQoS, monitora
+> crashes e o encerra por `taskkill` sob demanda**. O resto acontece no
+> Windows (catálogo de 559 comandos e lotes como "Ajustes de desempenho",
+> "Teclado Turbo", transparência e GPU) ou na tela FPS Game Booster, cujos
+> cards gravam configurações cifradas cujo consumidor não foi rastreado.
 
 ## 4. Nota sobre reconstrução
 

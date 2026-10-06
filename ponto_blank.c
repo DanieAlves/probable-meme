@@ -1,23 +1,56 @@
 /* ============================================================================
  *  ReetFPS.exe  -  MODULO POINT BLANK (ponto_blank.c)
  * ----------------------------------------------------------------------------
- *  Reconstrucao em C anotada das rotinas que o ReetFPS executa DIRETAMENTE
- *  sobre o processo do Point Blank. Complementa reetfps.c (login + otimizador
- *  do Windows) e o resumo de alto nivel em ponto_blank.md.
+ *  Reconstrucao em C anotada das rotinas do ReetFPS ligadas ao Point Blank
+ *  e das funcionalidades anunciadas na tela do programa. Complementa
+ *  reetfps.c (login + otimizador do Windows) e o resumo em ponto_blank.md.
  *
- *  O QUE ESTA AQUI
- *    1.  pb_encontrar_instalacao()          -- acha onde o jogo esta instalado
- *    2.  pb_encerrar_processos()            -- mata o processo do jogo via taskkill
- *    3.  pb_init_ponteiros_api()            -- carrega funcoes da WinAPI em runtime
- *    4.  pb_elevar_prioridade_cpu()         -- SetPriorityClass(ABOVE_NORMAL) no jogo
- *    5.  pb_elevar_priority_boost()         -- SetProcessPriorityBoost(bDisable=FALSE)
- *    6.  pb_elevar_prioridade_gpu()         -- D3DKMTSetProcessSchedulingPriorityClass
- *    7.  pb_mmcss_configurar()              -- AvSetMmThread* (MMCSS, perfil "Games")
- *    8.  pb_verificar_crashes()             -- conta crashes diarios e exibe aviso
- *    9.  pb_ativar_fluidezmax()             -- perfil FLUIDEZMAX (7 itens)
- *   10.  limpeza_varrer_diretorio()         -- limpeza inteligente (FindFirstFile loop)
- *   11.  pb_configurar_timer_resolution()   -- SetProcessInformation (TimerResolutionPolicy)
- *   12.  crosshair_desenhar()               -- mira customizada sobre o jogo
+ *  O QUE ESTA AQUI (numero da secao -- funcao principal -- o que e comprovado)
+ *     1  pb_encontrar_instalacao()        caminhos fixos + drives C..Z ate achar o PB
+ *     2  pb_encerrar_processos()          taskkill /F /T via CreateProcessW oculto
+ *     3  pb_init_ponteiros_api()          GetProcAddress de kernel32/psapi/gdi32
+ *     4  pb_elevar_prioridade_cpu()       SetPriorityClass(ABOVE_NORMAL) no PB
+ *     5  pb_elevar_priority_boost()       religa o priority boost dinamico do PB
+ *     6  pb_elevar_prioridade_gpu()       D3DKMT: classe <= NORMAL -> ABOVE_NORMAL (3)
+ *     7  pb_mmcss_configurar()            MMCSS ("Pro Audio"/"Games"/"Playback") na
+ *                                         thread de timer do PROPRIO ReetFPS
+ *     8  pb_verificar_crashes()           notificacao diaria "pb-crash-yyyymmdd"
+ *        (visao geral: Gestao Inteligente / TPointBlankStabilityMonitor)
+ *     9  pb_ativar_fluidezmax()           FLUIDEZMAX + lista de recomendacoes e o
+ *                                         despachante chave -> botao do TGameBooster
+ *    10  pb_timer_resolution_*()          NtSetTimerResolution 0.5 ms (timeBeginPeriod
+ *                                         so como fallback) + thread de manutencao
+ *    11  limpeza_varrer_diretorio()       limpeza recursiva com \\?\ e juncoes
+ *    12  pb_configurar_timer_resolution() SetProcessInformation (classe 4) no PB, Win11
+ *    13  crosshair_desenhar()             pre-visualizacao da mira (6 cores, sombra)
+ *    14  pb_teclado_precisao_*()          "Teclado Turbo": 3 reg add em Keyboard Response
+ *    15  pb_ajustes_desempenho_ativar()   lote de 35 cmds + Game Bar (nome da feature
+ *                                         INFERIDO)
+ *    16  pb_interface_transparencia_*()   toggle de transparencia; card INTERFACEDELAY
+ *    17  pb_fps_definir_preset()          form TUNLOCK_FPS: preset 1..6 no JSON
+ *    18  pb_loadingmap_ativar()           card MAPLOADING (item LOADINGMAP)
+ *    19  pb_minimap_off_ativar()          card MINIMAP (MINIMAP_OFF/ONClick) + TRPPBConfig
+ *    20  pb_desbloqueador_fps_*()         botoes FPSUNLOCKED_OFF/ON
+ *    21  pb_impulsionar_pb_*()            botoes PRIORITYPB_OFF/ON (ligacao com o nome
+ *                                         INFERIDA)
+ *    22  pb_fullscreen_ativar()           card TELACHEIA (item FULLSCREEN)
+ *    23  gpu_otimizacao_*()               10 reg add de GPU/GameDVR/rede + perfil NVIDIA
+ *
+ *  PADRAO DOS CARDS DA TELA "FPS GAME BOOSTER" (secoes 16, 18-22)
+ *    Cada card tem botoes *_OFF/*_ON publicados no form TGameBooster.  Os
+ *    handlers INTERFACEDELAY, MAPLOADING, MINIMAP e TELACHEIA *_OFFClick
+ *    gravam um par chave/valor CIFRADO no store JSON de configuracoes,
+ *    trocam os botoes, chamam vtable[0x188] de um controle do overlay e
+ *    mostram um card de notificacao.  PRIORITYPB grava o par e liga uma flag
+ *    global (_DAT_138103f8); FPSUNLOCKED so abre um formulario.  Nenhum
+ *    desses handlers executa comandos nem escreve no processo do jogo; quem
+ *    le as chaves e aplica o efeito real NAO foi rastreado.
+ *
+ *  CONVENCOES
+ *    - Enderecos sao do binario (image base 0x13140000).
+ *    - "INFERIDO:" marca o que nao foi comprovado no Ghidra.
+ *    - Strings ofuscadas (FUN_134a8d98) sao citadas pelo endereco do blob;
+ *      o texto em claro nao foi recuperado.
  *
  *  O QUE NAO ESTA AQUI
  *    - O carregador PE em memoria (0x136e5000-0x136e7400) usa
@@ -26,8 +59,9 @@
  *
  *  COMO LER
  *    Cada funcao tem um comentario com o endereco original para voce abrir
- *    no Ghidra e conferir. Offsets de campo (ex.: +0x8d0) sao do objeto
- *    TPointBlankStabilityMonitor (o "contexto" param_1 de cada funcao).
+ *    no Ghidra e conferir. Nas secoes 3-6, offsets de campo (ex.: +0x8d0)
+ *    sao do objeto de manutencao (TPointBlankMantain, o param_1); nas secoes
+ *    16-22 sao do form TGameBooster (Self).
  *
  *  NAO COMPILA -- e uma leitura em C do que o binario faz.
  * ========================================================================== */
@@ -93,6 +127,66 @@ typedef struct {
 } TPointBlankMantain;
 
 
+/* ---------------------------------------------------------------------------
+ *  AUXILIARES COMPARTILHADOS (usados por varias secoes)
+ *
+ *  Convencao Delphi "register": os 3 primeiros parametros vao em EAX, EDX,
+ *  ECX; os demais sao empilhados da ESQUERDA para a DIREITA.  Nos prototipos
+ *  em C abaixo, os parametros de pilha aparecem na ordem de ENDERECO
+ *  crescente ([EBP+8], [EBP+0xc], ...), que e o inverso da ordem dos PUSH.
+ * ------------------------------------------------------------------------- */
+
+/* Card de notificacao do ReetFPS -- FUN_1358027c @ 0x1358027c.
+ * 16 parametros: titulo (EAX), corpo (EDX), duracao em ms (ECX) e 13 na
+ * pilha ([EBP+0x08] .. [EBP+0x38]).  A funcao copia tudo para um registro
+ * local; p11..p13 so sao usados quando != -1 (-1 = manter padrao) e, se
+ * icone != NULL, carrega a imagem antes de exibir.  INFERIDO: o significado
+ * de p4..p9 e p14..p16 (geometria/cores/flags do card) nao foi rastreado.
+ * Chamada tipica no binario:
+ *   FUN_1358027c(titulo, corpo, 0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+ *                L"icon.png", -1, -1, -1, 1, 1, 1);                       */
+extern void FUN_1358027c(DelphiStr titulo, DelphiStr corpo, int duracao_ms,
+                         int p4, int p5, int p6, int p7, int p8,
+                         uint8_t p9, const wchar_t *icone,
+                         int p11, int p12, int p13,
+                         uint8_t p14, uint8_t p15, uint8_t p16);
+
+/* Decodificador de string ofuscada -- FUN_134a8d98 @ 0x134a8d98.
+ * NAO exibe nada: devolve em *saida o texto decodificado de um blob cifrado.
+ * Registradores: EAX = ctx (*PTR_DAT_13811378), EDX = blob, ECX = tamanho;
+ * pilha (ordem dos PUSH): chave_b, chave_a, &saida.  Internamente passa por
+ * FUN_134a8c90 e FUN_134a8d34 (duas etapas); o texto em claro so existe em
+ * tempo de execucao.  Quase sempre o resultado e convertido em seguida por
+ * FUN_1314c690 (conversao de string).                                       */
+extern void decodificar_string(void *ctx, const void *blob, int tamanho,
+                               DelphiStr *saida, int chave_a, int chave_b);
+
+/* Despachante de comandos de shell -- FUN_135d1fb8 @ 0x135d1fb8.
+ * Recebe um array de linhas de comando e o INDICE DO ULTIMO elemento (EDX),
+ * monta um script .bat com as linhas nao vazias e o executa numa thread
+ * (worker com VMT em 0x135d1ec4).                                           */
+extern void executar_lote(const wchar_t *cmds[], int ultimo_indice);
+
+/* VCL. */
+extern void vcl_set_visible(void *controle, int visivel);   /* FUN_132abec4 = TControl.SetVisible */
+extern void vcl_set_text(void *controle, DelphiStr texto);  /* FUN_132ac010 = SetText */
+
+/* Store de configuracoes do ReetFPS (JSON, objeto em *PTR_DAT_13811bac). */
+extern void config_gravar(void *store, DelphiStr chave, DelphiStr valor); /* FUN_1369b158 */
+extern void config_remover(void *store, DelphiStr chave);                 /* FUN_1369ae6c */
+
+/* Aviso "jogo nao encontrado/nao aberto" -- FUN_135fcd18. */
+extern void jogo_nao_encontrado(void);
+
+/* Globais compartilhadas (cada uma guarda um ponteiro para a variavel real). */
+extern void **PTR_DAT_13811378;  /* contexto do decodificador de strings          */
+extern void **PTR_DAT_13811bac;  /* store de configuracoes (JSON)                 */
+extern void **PTR_DAT_1381110c;  /* form com os controles de overlay (+0x500..)   */
+extern void **PTR_DAT_13810cd8;  /* != 0: jogo em execucao (1a verificacao)       */
+extern void **PTR_DAT_13811928;  /* != 0: jogo em execucao (2a verificacao)       */
+extern void **PTR_DAT_13811568;  /* objeto de estado usado por secao 15/secao 16            */
+
+
 /* ===========================================================================
  *  1. ENCONTRAR A INSTALACAO DO POINT BLANK
  * ===========================================================================
@@ -109,11 +203,26 @@ typedef struct {
  *    "nao foi possivel iniciar o Point Blank. Feche o PBLauncher, abra o
  *     ReetFPS como administrador e tente novamente."
  */
+
+/* Auxiliares de lista/string. */
+extern void   PTR_FUN_131d5998;                                   /* VMT de TStringList */
+extern void  *criar_lista(void *vmt, int alocar);                 /* FUN_13206ce8 = TStringList.Create */
+extern void   lista_adicionar(void *lista, const wchar_t *s);     /* vtable+0x3c */
+extern int    lista_contar(void *lista);                          /* vtable+0x14 */
+extern void  *lista_obter(void *lista, int i);                    /* vtable+0x0c */
+extern void   destruir_lista(void *lista);                        /* FUN_13149ad8 */
+extern bool   env_var_expandir(const wchar_t *nome, DelphiStr *d);/* FUN_1317948c */
+extern void   str_concatenar(DelphiStr *dst, const wchar_t *suf); /* FUN_1314c7d0 */
+extern void   str_concat(DelphiStr *dst, const wchar_t *a,
+                         const wchar_t *b);                       /* FUN_1314c828: dst = a + b */
+extern bool   testar_caminho_pb(void *ctx, DelphiStr caminho,
+                                DelphiStr *resultado);            /* FUN_136edf7c */
+
 bool pb_encontrar_instalacao(void *contexto_pb, DelphiStr *caminho_out)
 {
-    /* Lista dinamica de candidatos (TList / TStringList do Delphi).
-     * FUN_13206ce8(&PTR_FUN_131d5998, 1) = cria um TList. */
-    void *lista = criar_lista_strings();
+    /* Lista dinamica de candidatos: FUN_13206ce8(&PTR_FUN_131d5998, 1)
+     * = TStringList.Create (VMT 0x131d5998, vmtClassName "TStringList"). */
+    void *lista = criar_lista(&PTR_FUN_131d5998, 1);
 
     /* --- Caminhos fixos conhecidos --- */
     lista_adicionar(lista, L"C:\\Zepetto\\PointBlank\\");
@@ -139,7 +248,7 @@ bool pb_encontrar_instalacao(void *contexto_pb, DelphiStr *caminho_out)
 
     /* --- Varre todas as letras de drive (C: a Z:) ---
      *
-     * Loop: sVar6 começa em 0x43 ('C') e vai ate 0x5A ('Z') inclusive.
+     * Loop: sVar6 comeca em 0x43 ('C') e vai ate 0x5A ('Z') inclusive.
      * Para cada letra, testa GetDriveTypeW; se == DRIVE_FIXED (3), adiciona
      * quatro subpastas candidatas.
      *
@@ -152,16 +261,16 @@ bool pb_encontrar_instalacao(void *contexto_pb, DelphiStr *caminho_out)
         wchar_t raiz[4] = { letra, L':', L'\\', L'\0' };
         if (GetDriveTypeW(raiz) == DRIVE_FIXED) {
             DelphiStr tmp = NULL;
-            str_combinar_caminho(&tmp, raiz, L"Zepetto\\PointBlank\\");
+            str_concat(&tmp, raiz, L"Zepetto\\PointBlank\\");
             lista_adicionar(lista, tmp);
 
-            str_combinar_caminho(&tmp, raiz, L"PointBlank\\");
+            str_concat(&tmp, raiz, L"PointBlank\\");
             lista_adicionar(lista, tmp);
 
-            str_combinar_caminho(&tmp, raiz, L"Games\\PointBlank\\");
+            str_concat(&tmp, raiz, L"Games\\PointBlank\\");
             lista_adicionar(lista, tmp);
 
-            str_combinar_caminho(&tmp, raiz, L"Jogos\\PointBlank\\");
+            str_concat(&tmp, raiz, L"Jogos\\PointBlank\\");
             lista_adicionar(lista, tmp);
         }
     }
@@ -183,20 +292,6 @@ bool pb_encontrar_instalacao(void *contexto_pb, DelphiStr *caminho_out)
     return false;
 }
 
-/* Prototipos dos auxiliares de lista/string usados acima. */
-extern void  *criar_lista_strings(void);                          /* FUN_13206ce8 */
-extern void   lista_adicionar(void *lista, const wchar_t *s);     /* vtable+0x3c */
-extern int    lista_contar(void *lista);                          /* vtable+0x14 */
-extern void  *lista_obter(void *lista, int i);                    /* vtable+0x0c */
-extern void   destruir_lista(void *lista);                        /* FUN_13149ad8 */
-extern bool   env_var_expandir(const wchar_t *nome, DelphiStr *d);/* FUN_1317948c */
-extern void   str_concatenar(DelphiStr *dst, const wchar_t *suf); /* FUN_1314c7d0 */
-extern void   str_combinar_caminho(DelphiStr *dst,
-                                   const wchar_t *base,
-                                   const wchar_t *suf);           /* FUN_1314c828 */
-extern bool   testar_caminho_pb(void *ctx, DelphiStr caminho,
-                                DelphiStr *resultado);            /* FUN_136edf7c */
-
 
 /* ===========================================================================
  *  2. ENCERRAR PROCESSOS DO JOGO
@@ -214,6 +309,10 @@ extern bool   testar_caminho_pb(void *ctx, DelphiStr caminho,
  *    "O jogo fechou, mas o processo continua aberto. Abra para encerrar."
  *    "Processo %s encerrado"
  */
+
+/* Auxiliar: concatena "taskkill.exe /F /T /IM \"" + nome + "\"" */
+extern wchar_t *montar_cmd_taskkill(const wchar_t *nome_exe); /* FUN_1314c8b0 + idx 3 */
+
 void pb_encerrar_processos(const wchar_t *nome_exe)
 {
     /* Monta:  taskkill.exe /F /T /IM "<nome_exe>"  */
@@ -246,9 +345,6 @@ void pb_encerrar_processos(const wchar_t *nome_exe)
     }
 }
 
-/* Auxiliar: concatena "taskkill.exe /F /T /IM \"" + nome + "\"" */
-extern wchar_t *montar_cmd_taskkill(const wchar_t *nome_exe); /* FUN_1314c8b0 + idx 3 */
-
 
 /* ===========================================================================
  *  3. INICIALIZAR PONTEIROS DE API EM RUNTIME
@@ -264,6 +360,12 @@ extern wchar_t *montar_cmd_taskkill(const wchar_t *nome_exe); /* FUN_1314c8b0 + 
  *  FUN_135a2f84(nome)  -- GetProcAddress em psapi.dll  (fallback antigo)
  *  FUN_135a2fd8(nome)  -- GetProcAddress em gdi32.dll
  */
+
+extern FARPROC g_pfn_GetTickCount64;                    /* DAT_13819a5c */
+extern FARPROC GetProcAddress_kernel32(const char *fn); /* FUN_135a2f38 */
+extern FARPROC GetProcAddress_psapi   (const char *fn); /* FUN_135a2f84 */
+extern FARPROC GetProcAddress_gdi32   (const char *fn); /* FUN_135a2fd8 */
+
 void pb_init_ponteiros_api(TPointBlankMantain *ctx)
 {
     /* Garante GetTickCount64 resolvido globalmente (DAT_13819a5c). */
@@ -295,15 +397,11 @@ void pb_init_ponteiros_api(TPointBlankMantain *ctx)
     ctx->pfn_D3DKMTSetProcessSchedulingPriorityClass =
         GetProcAddress_gdi32("D3DKMTSetProcessSchedulingPriorityClass");
 
-    /* d3dkmt_disponivel so e true se AMBAS as funcoes foram encontradas. */
+    /* d3dkmt_disponivel so e true se AMBAS as funcoes foram encontradas
+     * (o secao 6 volta a atualizar +0x8fd conforme o resultado do Get). */
     ctx->d3dkmt_disponivel = (ctx->pfn_D3DKMTGetProcessSchedulingPriorityClass != NULL)
                           && (ctx->pfn_D3DKMTSetProcessSchedulingPriorityClass != NULL);
 }
-
-extern FARPROC g_pfn_GetTickCount64;                    /* DAT_13819a5c */
-extern FARPROC GetProcAddress_kernel32(const char *fn); /* FUN_135a2f38 */
-extern FARPROC GetProcAddress_psapi   (const char *fn); /* FUN_135a2f84 */
-extern FARPROC GetProcAddress_gdi32   (const char *fn); /* FUN_135a2fd8 */
 
 
 /* ===========================================================================
@@ -323,6 +421,12 @@ extern FARPROC GetProcAddress_gdi32   (const char *fn); /* FUN_135a2fd8 */
  *    "GetPriorityClass"
  *    "SetPriorityClass.AboveNormal"
  */
+
+/* Auxiliar de log de erros do modulo Maintain (usado tambem em secao 5 e secao 6). */
+extern void log_erro_maintain(TPointBlankMantain *ctx,
+                              const wchar_t *operacao,
+                              DWORD codigo_erro);  /* FUN_135a4a18 */
+
 void pb_elevar_prioridade_cpu(TPointBlankMantain *ctx, HANDLE hProcesso)
 {
     /* Verifica flag "feature de prioridade de CPU ativa" (+0x8cc). */
@@ -358,11 +462,6 @@ void pb_elevar_prioridade_cpu(TPointBlankMantain *ctx, HANDLE hProcesso)
     }
 }
 
-/* Auxiliar de log de erros do modulo Maintain. */
-extern void log_erro_maintain(TPointBlankMantain *ctx,
-                              const wchar_t *operacao,
-                              DWORD codigo_erro);  /* FUN_135a4a18 */
-
 
 /* ===========================================================================
  *  5. HABILITAR O PRIORITY BOOST DINAMICO DO PROCESSO
@@ -380,7 +479,7 @@ extern void log_erro_maintain(TPointBlankMantain *ctx,
  *
  *  As escritas finais nos campos do contexto sao feitas sob uma trava: o
  *  objeto em ctx+0x04 tem vtable[0] = travar e vtable[1] = destravar
- *  (mesmo padrao do §6). Aqui isso aparece como trava_ctx/destrava_ctx.
+ *  (mesmo padrao do secao 6). Aqui isso aparece como trava_ctx/destrava_ctx.
  */
 
 /* Trava do contexto: vtable[0]/vtable[1] do objeto em ctx+0x04. */
@@ -462,7 +561,7 @@ void pb_elevar_priority_boost(TPointBlankMantain *ctx, HANDLE hProcesso)
  *    (usada so na falha do Set; a falha do Get NAO gera log)
  *
  *  As escritas finais em +0x3d/+0x3e/+0x7c/+0x36 sao feitas sob a trava do
- *  contexto (ver §5).
+ *  contexto (ver secao 5).
  */
 #define D3DKMT_CLASSE_NORMAL        2
 #define D3DKMT_CLASSE_ABOVE_NORMAL  3
@@ -563,13 +662,13 @@ void pb_elevar_prioridade_gpu(TPointBlankMantain *ctx, HANDLE hProcesso)
  *    "Playback"   @ 0x1357c590
  *
  *  IMPORTANTE: AvSetMmThreadCharacteristicsW age sobre a thread que a chama.
- *  Quem chama e o Execute da thread de manutencao do timer (ver §10), entao o
+ *  Quem chama e o Execute da thread de manutencao do timer (ver secao 10), entao o
  *  MMCSS e aplicado a essa thread do proprio ReetFPS, NAO ao processo do
  *  Point Blank. O objetivo e a thread que reafirma a resolucao de 0.5 ms
  *  nao perder a vez para outras threads.
  *
  *  Nao ha timeEndPeriod aqui: o timeEndPeriod(1) pertence a FUN_1357c5e0
- *  (revogacao do timer, §10) e so roda se o fallback timeBeginPeriod foi usado.
+ *  (revogacao do timer, secao 10) e so roda se o fallback timeBeginPeriod foi usado.
  */
 
 typedef HANDLE (WINAPI *PFN_AvSetMmThreadCharacteristicsW)(LPCWSTR, LPDWORD);
@@ -644,6 +743,22 @@ void pb_mmcss_reverter(HANDLE h_tarefa)
  *  FUN_1359e8ec(ctx) -- por isso o aviso aparece no maximo uma vez.
  *  INFERIDO: FUN_1359e8ec persiste o estado diario (nao decompilada aqui).
  */
+
+extern void **g_config_app;                    /* PTR_DAT_13811668 (+0xbc = suprimir avisos) */
+extern void  *g_format_settings;               /* PTR_DAT_138118c0 (TFormatSettings) */
+extern void   str_formatar(DelphiStr *dst,
+                           const wchar_t *fmt, ...);       /* FUN_1316ec8c */
+extern double agora(void);                                  /* FUN_13170f54 */
+extern void   formatar_data(const wchar_t *fmt, void *fs,
+                            DelphiStr *dst, double quando); /* FUN_13171f58 */
+/* str_concat (FUN_1314c828) declarada no secao 1. */
+extern void  *obter_notificador(void);                      /* FUN_134ad1c8 */
+extern bool   notificador_publicar(void *n, DelphiStr chave, int tipo,
+                                   const wchar_t *titulo,
+                                   DelphiStr curta, DelphiStr detalhe,
+                                   int extra);              /* FUN_134ae4cc */
+extern void   pb_salvar_estado_diario(TPointBlankMantain *ctx); /* FUN_1359e8ec */
+
 void pb_verificar_crashes(TPointBlankMantain *ctx)
 {
     if (ctx->contagem_crashes_hoje <= 2
@@ -684,21 +799,6 @@ void pb_verificar_crashes(TPointBlankMantain *ctx)
     }
 }
 
-extern void **g_config_app;                    /* PTR_DAT_13811668 (+0xbc = suprimir avisos) */
-extern void  *g_format_settings;               /* PTR_DAT_138118c0 (TFormatSettings) */
-extern void   str_formatar(DelphiStr *dst,
-                           const wchar_t *fmt, ...);       /* FUN_1316ec8c */
-extern double agora(void);                                  /* FUN_13170f54 */
-extern void   formatar_data(const wchar_t *fmt, void *fs,
-                            DelphiStr *dst, double quando); /* FUN_13171f58 */
-/* str_concat (FUN_1314c828) e declarado junto aos auxiliares da secao 11. */
-extern void  *obter_notificador(void);                      /* FUN_134ad1c8 */
-extern bool   notificador_publicar(void *n, DelphiStr chave, int tipo,
-                                   const wchar_t *titulo,
-                                   DelphiStr curta, DelphiStr detalhe,
-                                   int extra);              /* FUN_134ae4cc */
-extern void   pb_salvar_estado_diario(TPointBlankMantain *ctx); /* FUN_1359e8ec */
-
 
 /* ===========================================================================
  *  VISAO GERAL: GESTAO INTELIGENTE (TPointBlankStabilityMonitor)
@@ -714,8 +814,7 @@ extern void   pb_salvar_estado_diario(TPointBlankMantain *ctx); /* FUN_1359e8ec 
  *         - Chama pb_elevar_prioridade_cpu() via TPointBlankMantain
  *         - Chama pb_elevar_priority_boost()
  *         - Chama pb_elevar_prioridade_gpu()
- *         - Chama pb_mmcss_configurar()
- *         - Aplica o perfil de energia via PowerCfg (catalogo POWER)
+ *         - INFERIDO: aplica o perfil de energia via PowerCfg (catalogo POWER)
  *         - Exibe: "Gestao Inteligente ativada. O ReetFPS passa a gerenciar
  *                   o desempenho do Point Blank automaticamente."
  *    3. Monitora o processo (TPointBlankDailyState conta sessoes e crashes).
@@ -723,7 +822,13 @@ extern void   pb_salvar_estado_diario(TPointBlankMantain *ctx); /* FUN_1359e8ec 
  *         - TPointBlankExitInfo captura o codigo de saida.
  *         - TPointBlankCrashVerifierThread / TPointBlankCrashVerificationTask
  *           classifica se foi crash ou saida normal.
- *         - Reverte prioridade de CPU / boost / GPU / MMCSS.
+ *         - Reverte prioridade de CPU / boost / GPU.
+ *
+ *  O MMCSS (secao 7) NAO faz parte deste fluxo: pb_mmcss_configurar() retorna o
+ *  HANDLE da tarefa MMCSS e e chamada pelo Execute da thread
+ *  "ReetTimerPrecision" do proprio ReetFPS (0x1357c88c), que guarda o handle
+ *  em self+0x28 e o devolve a pb_mmcss_reverter(HANDLE) ao terminar.  Ela
+ *  age sobre essa thread, nao sobre o processo do Point Blank.
  *         - Chama pb_verificar_crashes() se houver crashes no dia.
  *
  *  Classes RTTI confirmadas no binario (0x13599d7a - 0x1359a8ec):
@@ -807,20 +912,31 @@ extern void   pb_salvar_estado_diario(TPointBlankMantain *ctx); /* FUN_1359e8ec 
  *  levanta excecao (mensagem @ 0x136f7a98). Depois compara a chave (ECX) com
  *  cada string via FUN_1316c388 e, no primeiro acerto, chama
  *  FUN_136f782c(handler, form):
- *    chave (string comparada)                    handler
- *    ------------------------------------------  ----------
+ *    chave (string comparada)                handler     nome publicado (TGameBooster)
+ *    --------------------------------------  ----------  ------------------------------
  *    "FLUIDEZMAX" @0x136f7ae0 ou
- *    "FLUIDEZMAXIMA" @0x136f7b04                  0x1372a03c
- *    "FULLSCREEN" @0x136f7b2c                     0x1372dfb0
- *    "OPTIMIZER_PB_MANAGER" @0x136f7b50           0x13729094
- *    "FPS_SELECTION_INDEX" @0x136f7b88            0x137294d8
- *    "PRIORITYPB" @0x136f7bbc                     0x1372e888
- *    "LOADINGMAP" @0x136f7be0                     0x13728d20
- *    "INTERFACE" @0x136f7c04                      0x1372d4b8
- *    "REETGAMEMODE" @0x136f7c24                   0x1372c00c
- *  Obs.: OPTIMIZER_PB_MANAGER vai para 0x13729094; FUN_13600598 e outra
- *  rotina (reparo do sistema), nao este item.
- *  INFERIDO: o corpo de cada handler nao foi analisado nesta secao.
+ *    "FLUIDEZMAXIMA" @0x136f7b04              0x1372a03c  GRAPHIC_OFFClick
+ *    "FULLSCREEN" @0x136f7b2c                 0x1372dfb0  TELACHEIA_OFFClick       (secao 22)
+ *    "OPTIMIZER_PB_MANAGER" @0x136f7b50       0x13729094  MINIMAP_OFFClick         (secao 19)
+ *    "FPS_SELECTION_INDEX" @0x136f7b88        0x137294d8  FPSUNLOCKED_OFFClick     (secao 20)
+ *    "PRIORITYPB" @0x136f7bbc                 0x1372e888  PRIORITYPB_OFFClick      (secao 21)
+ *    "LOADINGMAP" @0x136f7be0                 0x13728d20  MAPLOADING_OFFClick      (secao 18)
+ *    "INTERFACE" @0x136f7c04                  0x1372d4b8  INTERFACEDELAY_OFFClick  (secao 16)
+ *    "REETGAMEMODE" @0x136f7c24               0x1372c00c  ReetFPSSettingsPanel1Categories3Items2ToggleOn
+ *
+ *  Os nomes vem da tabela de metodos publicados do TGameBooster (registros
+ *  [tamanho][endereco][nome] em aprox. 0x13724870..0x13725100), conferidos byte a
+ *  byte.  Ou seja: aplicar uma recomendacao do grupo PointBlank equivale a
+ *  "clicar" no botao *_OFF do card correspondente da tela FPS Game Booster
+ *  (o botao visivel quando a opcao esta desligada).  Pares *_ONClick
+ *  (desfazer): GRAPHIC 0x1372a37c, TELACHEIA 0x1372e304, MINIMAP 0x13729410,
+ *  FPSUNLOCKED 0x13729524, PRIORITYPB 0x1372ebb0, MAPLOADING 0x13728fc8,
+ *  INTERFACEDELAY 0x1372d948; REETGAMEMODE -> ...ToggleOff 0x1372bf24.
+ *  Note que a chave OPTIMIZER_PB_MANAGER ("Otimizacao Inteligente") cai no
+ *  botao MINIMAP_OFF -- o binario e assim; o motivo do nome nao e conhecido.
+ *  FUN_13600598 e outra rotina (reparo do sistema), nao este item.
+ *  Os handlers estao descritos nas secoes indicadas; GRAPHIC_OFFClick e o
+ *  ToggleOn de REETGAMEMODE nao foram analisados (INFERIDO).
  *
  *  INFERIDO: nao foi comprovado que este array em (form+0x340) seja a mesma
  *  lista (form+0x2e0) que FUN_137008d0 executa -- os offsets sao diferentes.
@@ -842,14 +958,32 @@ extern void   pb_salvar_estado_diario(TPointBlankMantain *ctx); /* FUN_1359e8ec 
  *                          (cache de extracao de drivers NVIDIA)
  */
 
-/* Estrutura de um item do perfil FLUIDEZMAX (campos reconstruidos da tabela
- * em 0x136ecb00 e do loop em FUN_137008d0 @ offsets +0xc, +0x1c, +0x20, +0x24). */
+/* Item da lista em (panel+0x2e0), com os offsets lidos no loop de
+ * FUN_137008d0 (+0xc, +0x1c, +0x20, +0x24).
+ * INFERIDO: o significado dos tres campos de string (chave/icone/descricao). */
 typedef struct {
-    /* +0x0c */ DelphiStr chave;        /* ex.: L"fullscreen"         */
-    /* +0x1c */ DelphiStr icone_label;  /* ex.: L"FULLSCREEN"         */
-    /* +0x20 */ DelphiStr descricao;    /* ex.: L"Fullscreen exclusivo"*/
-    /* +0x24 */ bool      habilitado;   /* checkbox marcado na UI     */
+    /* +0x0c */ DelphiStr chave;
+    /* +0x1c */ DelphiStr icone_label;
+    /* +0x20 */ DelphiStr descricao;
+    /* +0x24 */ bool      habilitado;   /* item marcado na UI */
 } TGameModeItem;
+
+/* Auxiliares de execucao do Game Mode. */
+extern void  executar_itens_habilitados(void *panel);         /* FUN_137008d0 (abaixo) */
+extern void *criar_act_rec(void *tipo_rtti, int ref);         /* FUN_13149aa8 */
+/* criar_lista (FUN_13206ce8) e PTR_FUN_131d5998 declarados no secao 1. */
+extern void  str_assign(void *dst, DelphiStr src);            /* atribuicao de string da RTL */
+extern void  FUN_13206ee0(void *lista, int valor);            /* setter do TStringList */
+extern void  FUN_13206c10(void *lista, int valor);            /* setter do TStringList */
+extern void  desativar_estado_ui(void);                       /* FUN_136fade8 */
+extern void  iniciar_loop_execucao(void *array_triplas);      /* FUN_13219b0c */
+extern void  iniciar_dispatcher(void);                        /* FUN_1321a804 */
+extern void  perfil_marcar_ativo(void *panel, int ativo);     /* FUN_13700b24 */
+extern void  criar_array_triplas(void *dst, void *tipo, int n);/* FUN_1314efd0 */
+extern int   lista_count_ptr(void *lista);                    /* vtable+0x08  */
+extern void *lista_get_ptr(void *lista, int i);               /* FUN_136fb698 */
+extern void *DAT_1370050c;  /* RTTI: TReetGameModePanel.ExecuteGameModeActions$ActRec */
+extern void *DAT_13700334;  /* RTTI do tipo das triplas do array */
 
 /*
  * pb_ativar_fluidezmax()  (original: FUN_13700af0 @ 0x13700af0)
@@ -954,21 +1088,6 @@ void executar_itens_habilitados(void *panel)
     iniciar_dispatcher();
 }
 
-/* Prototipos dos auxiliares de execucao do Game Mode. */
-extern void *criar_act_rec(void *tipo_rtti, int ref);         /* FUN_13149aa8 */
-extern void *criar_lista(void *vmt_tstringlist, int alocar);  /* FUN_13206ce8 */
-extern void  FUN_13206ee0(void *lista, int valor);            /* setter do TStringList */
-extern void  FUN_13206c10(void *lista, int valor);            /* setter do TStringList */
-extern void  desativar_estado_ui(void);                       /* FUN_136fade8 */
-extern void  iniciar_loop_execucao(void *array_triplas);      /* FUN_13219b0c */
-extern void  iniciar_dispatcher(void);                        /* FUN_1321a804 */
-extern void  perfil_marcar_ativo(void *panel, int ativo);     /* FUN_13700b24 */
-extern void  criar_array_triplas(void *dst, void *tipo, int n);/* FUN_1314efd0 */
-extern void *lista_count_ptr(void *lista);                    /* vtable+0x08  */
-extern void *lista_get_ptr(void *lista, int i);               /* FUN_136fb698 */
-extern void *DAT_1370050c;  /* RTTI: TReetGameModePanel.ExecuteGameModeActions$ActRec */
-extern void *DAT_13700334;  /* RTTI do tipo das triplas do array */
-
 
 /* ===========================================================================
  *  10) TIMER RESOLUTION  (BUTTON_TIMER_RESOLUTION_ON @ 0x137805cc)
@@ -1036,6 +1155,13 @@ typedef long (NTAPI *PfnNtQueryTimerResolution)(
 extern PfnNtSetTimerResolution   pfn_NtSetTimerResolution;   /* 0x1357c294 thunk */
 extern PfnNtQueryTimerResolution pfn_NtQueryTimerResolution;
 
+/* Auxiliares do subsistema de timer resolution.
+ * (EnterCriticalSection/LeaveCriticalSection vem de <windows.h>.) */
+extern void *criar_task_thread(void *vmt, int a, int b);        /* FUN_1321994c */
+extern void  configurar_task(void *task, int modo);             /* FUN_13219fd8 */
+extern CRITICAL_SECTION g_timer_cs;  /* DAT_138199bc */
+extern void  PTR_FUN_1357c804;       /* VMT de TTPWatchdog, a thread "ReetTimerPrecision" (secao 7) */
+
 
 /*
  * pb_timer_resolution_ativar_manutencao  (FUN_1357c9b0 @ 0x1357c9b0)
@@ -1048,10 +1174,11 @@ void pb_timer_resolution_ativar_manutencao(void)
     EnterCriticalSection(&g_timer_cs); /* DAT_138199bc */
 
     if (g_timer_task == NULL) {
-        /* FUN_1321994c: cria objeto de task/thread com callback PTR_FUN_1357c804.
-         * INFERIDO: que o callback re-aplica o timer via pb_timer_resolution_aplicar
-         * (0x1357c804 nao e funcao definida no Ghidra; nao foi rastreado).
-         * Nome interno: "ReetTimerPrecision" (DAT_1357c870). */
+        /* FUN_1321994c: cria a thread a partir da VMT em 0x1357c804 (classe
+         * TTPWatchdog, nome interno "ReetTimerPrecision" @ DAT_1357c870).
+         * O Execute dela (0x1357c88c) registra a propria thread no MMCSS (secao 7).
+         * INFERIDO: que o Execute tambem re-aplica o timer via
+         * pb_timer_resolution_aplicar (nao foi rastreado). */
         g_timer_task = criar_task_thread(&PTR_FUN_1357c804, 1, 1); /* FUN_1321994c */
         configurar_task(g_timer_task, 0);                           /* FUN_13219fd8 */
         iniciar_dispatcher();                                       /* FUN_1321a804 */
@@ -1140,14 +1267,6 @@ void pb_timer_resolution_parar(void)    /* FUN_1357ca34 */
  * duas APIs incondicionalmente e trocava Get/Set de +0x8a0/+0x8a4.
  */
 
-/* Prototipos dos auxiliares do subsistema de timer resolution. */
-extern void *criar_task_thread(void *callback, int a, int b);   /* FUN_1321994c */
-extern void  configurar_task(void *task, int modo);             /* FUN_13219fd8 */
-extern void  EnterCriticalSection(void *cs);
-extern void  LeaveCriticalSection(void *cs);
-extern void *g_timer_cs;  /* DAT_138199bc */
-extern void  PTR_FUN_1357c804;  /* ponteiro para callback da thread de manutencao */
-
 
 /* ===========================================================================
  *  11) LIMPEZA INTELIGENTE
@@ -1219,6 +1338,18 @@ typedef struct {
 
 /* Retorna o contexto de stats da limpeza em andamento (singleton por thread). */
 extern TLimpezaStats *limpeza_stats_get(void);           /* FUN_13153234 */
+
+/* Auxiliares internos da limpeza. */
+extern void  limpeza_log_arquivo(void *worker, DelphiStr caminho); /* FUN_13671600 */
+extern bool  limpeza_tomar_posse(DelphiStr caminho);         /* FUN_136712f0 */
+extern bool  limpeza_worker_cancelado(void *worker);         /* FUN_1366039c */
+extern void  incluir_barra_final(DelphiStr dir, DelphiStr *dst); /* FUN_131776e8 */
+extern void  str_from_wbuf(DelphiStr *dst, const wchar_t *buf, int max); /* FUN_1314c674 */
+/* str_concat (FUN_1314c828) declarada no secao 1; str_assign no secao 9. */
+extern bool  str_starts_with(DelphiStr s, const wchar_t *prefix);
+extern DelphiStr str_substr(DelphiStr s, int from);
+extern const wchar_t *str_c(DelphiStr s);
+extern void  str_clear(DelphiStr *p);
 
 /* Normaliza o caminho para o formato Windows longo (\\?\).
  * Se ja comecar com \\?\ devolve igual;
@@ -1375,18 +1506,6 @@ bool limpeza_varrer_diretorio(TLimpezaFrame *f, const DelphiStr dir_path)
     return ok;
 }
 
-/* Prototipos dos auxiliares internos da limpeza. */
-extern void  limpeza_log_arquivo(void *worker, DelphiStr caminho); /* FUN_13671600 */
-extern bool  limpeza_tomar_posse(DelphiStr caminho);         /* FUN_136712f0 */
-extern bool  limpeza_worker_cancelado(void *worker);         /* FUN_1366039c */
-extern void  incluir_barra_final(DelphiStr dir, DelphiStr *dst); /* FUN_131776e8 */
-extern void  str_from_wbuf(DelphiStr *dst, const wchar_t *buf, int max); /* FUN_1314c674 */
-extern void  str_concat(DelphiStr *dst, ...);                /* FUN_1314c828 */
-extern bool  str_starts_with(DelphiStr s, const wchar_t *prefix);
-extern DelphiStr str_substr(DelphiStr s, int from);
-extern const wchar_t *str_c(DelphiStr s);
-extern void  str_clear(DelphiStr *p);
-
 
 /* ===========================================================================
  *  12) TIMER RESOLUTION -- SetProcessInformation / ProcessPowerThrottling (Win11)
@@ -1468,10 +1587,9 @@ typedef struct {
 
 /* Prototipos dos auxiliares de timer resolution (declarados antes do uso). */
 typedef int (WINAPI *PfnProcessInformation)(HANDLE h, int cls, void *buf, uint32_t sz);
-extern void timer_log(void *ctx, const wchar_t *msg, DWORD err);   /* FUN_135a4a18 */
 extern void ctx_copiar_config(void *ctx, uint8_t cfg[24]);         /* FUN_135a4024 */
-extern void ctx_lock(void *ctx);    /* TMonitor.Enter em *(ctx+4) (vtable[0]) */
-extern void ctx_unlock(void *ctx);  /* TMonitor.Exit  em *(ctx+4) (vtable[1]) */
+/* Log (FUN_135a4a18 = log_erro_maintain, secao 4) e trava (trava_ctx/destrava_ctx,
+ * secao 5) sao os mesmos auxiliares do modulo Maintain. */
 
 #define SET_PI(ctx) (*(PfnProcessInformation *)((uint8_t *)(ctx) + 0x8a0))
 #define GET_PI(ctx) (*(PfnProcessInformation *)((uint8_t *)(ctx) + 0x8a4))
@@ -1492,7 +1610,7 @@ void pb_configurar_timer_resolution(void *ctx, HANDLE hProc)
         return;                                     /* gate geral */
 
     if (SET_PI(ctx) == NULL || GET_PI(ctx) == NULL) {
-        timer_log(ctx, L"ProcessPowerThrottling.ApiUnavailable",
+        log_erro_maintain(ctx, L"ProcessPowerThrottling.ApiUnavailable",
                   0x78 /* ERROR_CALL_NOT_IMPLEMENTED */);
         return;
     }
@@ -1505,7 +1623,7 @@ void pb_configurar_timer_resolution(void *ctx, HANDLE hProc)
     memset(&st, 0, sizeof(st));
     st.Version = 1;
     if (!GET_PI(ctx)(hProc, CLASSE_PROCESS_POWER_THROTTLING, &st, sizeof(st))) {
-        timer_log(ctx, L"GetProcessInformation.PowerThrottling", GetLastError());
+        log_erro_maintain(ctx, L"GetProcessInformation.PowerThrottling", GetLastError());
         return;
     }
     *(uint32_t *)(c + 0x8dd) = st.Version;
@@ -1524,9 +1642,9 @@ void pb_configurar_timer_resolution(void *ctx, HANDLE hProc)
             memset(&novo, 0, sizeof(novo));
             novo.Version = 1; novo.ControlMask = 1; novo.StateMask = 0;
             if (SET_PI(ctx)(hProc, CLASSE_PROCESS_POWER_THROTTLING, &novo, sizeof(novo))) {
-                ctx_lock(ctx); c[0x35] = 1; ctx_unlock(ctx);
+                trava_ctx(ctx); c[0x35] = 1; destrava_ctx(ctx);
             } else {
-                timer_log(ctx, L"SetProcessInformation.PowerThrottling", GetLastError());
+                log_erro_maintain(ctx, L"SetProcessInformation.PowerThrottling", GetLastError());
             }
             /* INFERIDO: o decompilador mostra um "return" logo apos o
              * finally do lock; tratamos como continuacao do try/finally. */
@@ -1539,7 +1657,7 @@ void pb_configurar_timer_resolution(void *ctx, HANDLE hProc)
         memset(&st, 0, sizeof(st));
         st.Version = 1;
         if (!GET_PI(ctx)(hProc, CLASSE_PROCESS_POWER_THROTTLING, &st, sizeof(st))) {
-            timer_log(ctx, L"GetProcessInformation.TimerResolution.Pre", GetLastError());
+            log_erro_maintain(ctx, L"GetProcessInformation.TimerResolution.Pre", GetLastError());
             return;
         }
         if (bit_controlado_e_desligado(&st, 4)) {
@@ -1555,7 +1673,7 @@ void pb_configurar_timer_resolution(void *ctx, HANDLE hProc)
                 /* 0x57 INVALID_PARAMETER, 0x32 NOT_SUPPORTED,
                  * 0x78 CALL_NOT_IMPLEMENTED -> silenciados */
                 if (err != 0x57 && err != 0x32 && err != 0x78)
-                    timer_log(ctx, L"SetProcessInformation.TimerResolutionPolicy", err);
+                    log_erro_maintain(ctx, L"SetProcessInformation.TimerResolutionPolicy", err);
             } else {
                 c[0x8eb] = 1;
                 memset(&st, 0, sizeof(st));
@@ -1565,7 +1683,7 @@ void pb_configurar_timer_resolution(void *ctx, HANDLE hProc)
                 } else {
                     c[0x8ea] = bit_controlado_e_desligado(&st, 4);
                     if (c[0x8ea]) {
-                        ctx_lock(ctx); c[0x37] = 1; ctx_unlock(ctx);
+                        trava_ctx(ctx); c[0x37] = 1; destrava_ctx(ctx);
                     }
                 }
             }
@@ -1582,14 +1700,14 @@ void pb_configurar_timer_resolution(void *ctx, HANDLE hProc)
     if (pedir_timer && c[0x8ea])
         timer_ok = bit_controlado_e_desligado(&st, 4);
 
-    ctx_lock(ctx);
+    trava_ctx(ctx);
     *(uint32_t *)(c + 0x74) = st.ControlMask;
     *(uint32_t *)(c + 0x78) = st.StateMask;
     c[0x3c] = ecoqos_ok;
     c[0x41] = c[0x8eb];
     c[0x40] = c[0x8ea];
     c[0x3f] = timer_ok;
-    ctx_unlock(ctx);
+    destrava_ctx(ctx);
 }
 
 
@@ -1607,7 +1725,7 @@ void pb_configurar_timer_resolution(void *ctx, HANDLE hProc)
  *  STRINGS DE UI
  *    "PERSONALIZAR MIRA"       @ 0x13694a94  -- botao que abre o dialogo
  *    "TAMANHO DA LINHA"        @ 0x1369491c  -- label do controle de espessura
- *    "QUADRADO CENTRAL"        @ 0x13694970  -- tipo de forma: quadrado central
+ *    "QUADRADO CENTRAL"        @ 0x13694970  -- label do controle do quadrado central (+0x318)
  *    "Exibir sombra na mira"   @ 0x13695f50  -- checkbox de sombra
  *    "COR DA MIRA"             @ 0x13695f88  -- label do picker de cor
  *    "crosshair1_space"        @ 0x13727fae  -- nome interno do espaco da mira
@@ -1657,9 +1775,10 @@ void pb_configurar_timer_resolution(void *ctx, HANDLE hProc)
  *    FUN_13687120(form+0x46c).
  *
  *  CONFIGURACAO E PERSISTENCIA
- *    A mira e salva/carregada via chaves "CROSSHAIR_SHADOW" e "crosshair1_space"
- *    no INI/registro do ReetFPS. A chave "CROSSHAIR_SHADOW" (@ 0x13696f1c)
- *    controla o checkbox de sombra.
+ *    Chaves "CROSSHAIR_SHADOW" (@ 0x13696f1c, checkbox de sombra) e
+ *    "crosshair1_space".  INFERIDO: que sejam gravadas no store de
+ *    configuracoes (JSON) do ReetFPS, como as demais chaves de UI -- o
+ *    caminho de gravacao nao foi rastreado.
  */
 
 typedef struct {
@@ -1674,6 +1793,17 @@ typedef struct {
 } TRPCrosshair;
 
 extern const uint32_t g_cores_mira[7];  /* 0x1380f738; usar so [1..6] */
+
+/* Auxiliares da mira. */
+extern void  crosshair_obter_dimensoes(TRPCrosshair *m, float *w, float *h); /* FUN_13694bf0 */
+extern int   clamp(int v, int min, int max);                                  /* FUN_13191200 */
+extern void  canvas_clear(void *canvas, uint32_t cor_argb);                   /* FUN_134576f8 */
+extern float crosshair_raio_base(void);                                       /* FUN_13147ef4 */
+extern void  canvas_round_rect(void *canvas, uint32_t cor, float rx, float ry,
+                               float w, float h);                             /* FUN_13457c84 */
+extern void  canvas_fill_rect(void *canvas, uint32_t cor, float x, float y,
+                              float w, float h);                              /* FUN_13457b08 */
+extern void  controle_repaint(void *controle);                                /* vtable+0xe0 */
 
 /* FUN_13695114: retangulo (x, y, w, h) em unidades, escala 2x, relativo ao
  * centro. Na passada de sombra usa 0xe6000000 e cresce 1px de cada lado.  */
@@ -1740,17 +1870,6 @@ void crosshair_configurar_parametros(TRPCrosshair *m, int comprimento,
     controle_repaint(m);
 }
 
-/* Prototipos dos auxiliares da mira. */
-extern void  crosshair_obter_dimensoes(TRPCrosshair *m, float *w, float *h); /* FUN_13694bf0 */
-extern int   clamp(int v, int min, int max);                                  /* FUN_13191200 */
-extern void  canvas_clear(void *canvas, uint32_t cor_argb);                   /* FUN_134576f8 */
-extern float crosshair_raio_base(void);                                       /* FUN_13147ef4 */
-extern void  canvas_round_rect(void *canvas, uint32_t cor, float rx, float ry,
-                               float w, float h);                             /* FUN_13457c84 */
-extern void  canvas_fill_rect(void *canvas, uint32_t cor, float x, float y,
-                              float w, float h);                              /* FUN_13457b08 */
-extern void  controle_repaint(void *controle);                                /* vtable+0xe0 */
-
 
 /* ===========================================================================
  *  14) TECLADO DE PRECISAO  (interno: "Teclado Turbo")
@@ -1786,7 +1905,7 @@ extern void  controle_repaint(void *controle);                                /*
  *
  *  ITENS RELACIONADOS (nao chamados pelos handlers acima)
  *    "TeclasAderencia_ON" @ 0x136b6bec e "OpTeclado_ON" @ 0x136b6cac fazem
- *    parte da tabela generica de chaves de toggle (ver §15).
+ *    parte da tabela generica de chaves de toggle (ver secao 15).
  *    INFERIDO: a ligacao de qualquer um deles com o "Teclado Turbo" e apenas
  *    pelo nome.
  *
@@ -1801,40 +1920,25 @@ extern void  controle_repaint(void *controle);                                /*
  *      0x136b54d4 nao faz nenhuma checagem antes de executar o bloco.
  */
 
-/* Despachante de comandos: FUN_135d1fb8(arr, ultimo_indice).
- * Cria um objeto de thread (FUN_135d1fdc) que copia as linhas nao vazias
- * para uma lista, monta um script .bat ("@echo off" / "setlocal ..." /
- * linhas / "exit /b %errorlevel%", FUN_135d20d8) e o executa.             */
-extern void executar_lote(const wchar_t *cmds[], int ultimo_indice);   /* FUN_135d1fb8 */
-
-/* Decodificador de strings ofuscadas: le um blob cifrado e devolve a
- * UnicodeString em claro em *saida.  NAO exibe nada na tela.              */
-extern void decodificar_str(void *ctx, const void *blob, int tam,
-                            void **saida, int k1, int k2, int k3);   /* FUN_134a8d98 */
+/* executar_lote (FUN_135d1fb8), decodificar_string (FUN_134a8d98),
+ * vcl_set_visible (FUN_132abec4) e FUN_1358027c: ver AUXILIARES
+ * COMPARTILHADOS no inicio do arquivo.  O despachante monta um script .bat
+ * ("@echo off" / "setlocal ..." / linhas / "exit /b %errorlevel%",
+ * FUN_135d20d8) e o executa numa thread (FUN_135d1fdc).                    */
 
 /* Grava a "chave de estado" do toggle: FUN_135529c4 decodifica o caminho
  * (blob @ DAT_13552a34) e FUN_13552a50 abre HKCU (TRegistry, 0x80000001,
  * acesso 0xf003f), OpenKey(caminho, criar=1) e WriteInteger(nome, valor).
+ * Registradores de FUN_13552a50: EAX = obj, EDX = caminho, ECX = nome;
+ * o VALOR vai na pilha (PUSH 1 ao ativar, PUSH 0 ao restaurar -- empilhado
+ * antes da chamada ao decodificador, mas consumido so por esta funcao).
  * O caminho e o nome sao ofuscados; nao esta provado que o caminho seja
  * "Keyboard Layout\ReetFPS" (INFERIDO: e a chave de estado usada no resto
  * do programa, ex. @ 0x13467cd4).                                         */
-extern void estado_obter_chave(void *obj, void **caminho_out);       /* FUN_135529c4 */
-extern void estado_gravar(void *obj, void *caminho, void *nome);     /* FUN_13552a50 */
-
-/* Mostra/oculta um controle VCL (FUN_132abec4).                          */
-extern void vcl_set_visible(void *controle, int visivel);
-
-/* Toast do ReetFPS: FUN_1358027c recebe 16 argumentos (titulo, corpo,
- * duracao em ms e parametros de layout/cor/icone).  Todas as chamadas
- * observadas usam os mesmos valores: 0x1194 (4500 ms), 5, 0xe, 0xc, 0xa0,
- * 0x17c, 0xf5, L"icon.png", -1, -1, -1, 1, 1, 1.                          */
-extern void FUN_1358027c(const wchar_t *titulo, const wchar_t *corpo,
-                         int duracao_ms, int p4, int p5, int p6, int p7,
-                         int p8, int p9, const wchar_t *icone,
-                         int p11, int p12, int p13, int p14, int p15, int p16);
-
-extern void **PTR_DAT_13811378;   /* contexto do decodificador de strings   */
-extern void **PTR_DAT_13811568;   /* objeto dono da gravacao de estado      */
+extern void estado_obter_chave(void *obj, DelphiStr *caminho_out);           /* FUN_135529c4 */
+extern void estado_gravar(void *obj, DelphiStr caminho, DelphiStr nome,
+                          int valor);                                        /* FUN_13552a50 */
+extern void str_converter(DelphiStr *dst, DelphiStr src);                    /* FUN_1314c690 */
 
 static void teclado_bloco_ativar(void)                           /* 0x135e9af4 */
 {
@@ -1867,15 +1971,15 @@ static void teclado_bloco_restaurar(void)                        /* 0x135e9d98 *
 /* Handler ATIVAR @ 0x136b54d4.  `painel` chega em EAX (Self do form).    */
 void pb_teclado_precisao_ativar(uint8_t *painel)
 {
-    void *nome = NULL, *caminho = NULL, *tmp = NULL;
+    DelphiStr nome = NULL, caminho = NULL, tmp = NULL;
 
     /* Nome do valor de estado: blob @ 0x136b55d8 (cifrado).              */
-    decodificar_str(*PTR_DAT_13811378, (void *)0x136b55d8, 0xa4,
-                    &tmp, 0xe, 0x93, 1);
-    nome = tmp;                                  /* via FUN_1314c690       */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x136b55d8, 0xa4,
+                       &tmp, 0xe, 0x93);
+    str_converter(&nome, tmp);                   /* FUN_1314c690           */
 
     estado_obter_chave(*PTR_DAT_13811568, &caminho);
-    estado_gravar(*PTR_DAT_13811568, caminho, nome);
+    estado_gravar(*PTR_DAT_13811568, caminho, nome, 1);
 
     vcl_set_visible(*(void **)(painel + 0x4dc), 0);   /* oculta "ATIVAR"   */
     vcl_set_visible(*(void **)(painel + 0x4e0), 1);   /* exibe  "ATIVO"    */
@@ -1892,17 +1996,17 @@ void pb_teclado_precisao_ativar(uint8_t *painel)
 
 /* Handler RESTAURAR @ 0x136b5704.  Mesmo padrao, botoes invertidos, sem
  * toast.  O nome do valor de estado vem de outro blob (0x136b57d0) e o
- * ultimo argumento do decodificador e 0 em vez de 1.                     */
+ * valor gravado e 0 em vez de 1.                                          */
 void pb_teclado_precisao_restaurar(uint8_t *painel)
 {
-    void *nome = NULL, *caminho = NULL, *tmp = NULL;
+    DelphiStr nome = NULL, caminho = NULL, tmp = NULL;
 
-    decodificar_str(*PTR_DAT_13811378, (void *)0x136b57d0, 0xa4,
-                    &tmp, 0xe, 0x93, 0);
-    nome = tmp;
+    decodificar_string(*PTR_DAT_13811378, (void *)0x136b57d0, 0xa4,
+                       &tmp, 0xe, 0x93);
+    str_converter(&nome, tmp);
 
     estado_obter_chave(*PTR_DAT_13811568, &caminho);
-    estado_gravar(*PTR_DAT_13811568, caminho, nome);
+    estado_gravar(*PTR_DAT_13811568, caminho, nome, 0);
 
     vcl_set_visible(*(void **)(painel + 0x4e0), 0);   /* oculta "ATIVO"    */
     vcl_set_visible(*(void **)(painel + 0x4dc), 1);   /* exibe  "ATIVAR"   */
@@ -1922,9 +2026,9 @@ void pb_teclado_precisao_restaurar(uint8_t *painel)
  *  ("menor latencia", "resposta imediata", "input lag").
  *
  *  ---------------------------------------------------------------------
- *  A) "Ajustes de desempenho"  -- handler @ 0x136b0796
+ *  A) "Ajustes de desempenho"  -- handler @ 0x136b0798 (prologo 55 8B EC)
  *  ---------------------------------------------------------------------
- *    Mesmo padrao do §14: grava estado (blob @ 0x136b089c), oculta +0x518,
+ *    Mesmo padrao do secao 14: grava estado (blob @ 0x136b089c), oculta +0x518,
  *    exibe +0x51c, roda o lote @ 0x135f22f0 e mostra o toast:
  *      "Ajustes de desempenho aplicados!\r\nSistema otimizado para menor
  *       latencia e resposta imediata em jogos."  @ 0x136b08e0 (UTF-16LE)
@@ -1963,7 +2067,7 @@ void pb_teclado_precisao_restaurar(uint8_t *painel)
  *    As 9 strings (0x135d5b10 .. 0x135d64d0) e "Games\Latency Sensitive"
  *    (0x135d6f6c) NAO formam uma funcao propria: sao entradas de um lote
  *    unico de 232 comandos (codigo @ 0x135d2d8a, executar_lote(arr, 0xe7),
- *    literais de 0x135d383c ate ~0x135e1300) que mistura MMCSS, prioridade,
+ *    literais de 0x135d383c ate aprox. 0x135e1300) que mistura MMCSS, prioridade,
  *    rede, energia, latencia da GPU, servicos etc.
  *    Valores da tarefa "Low Latency": Affinity=0, Background Only=False,
  *    BackgroundPriority=0, Clock Rate=10000 (unidades de 100 ns = 1 ms),
@@ -1996,17 +2100,17 @@ static void entrada_lote_ajustes(void)                           /* 0x135f22f0 *
     executar_lote(g_lote_ajustes_desempenho, 0x22);
 }
 
-/* Handler @ 0x136b0796 (nao definido como funcao no Ghidra).            */
+/* Handler @ 0x136b0798 (nao definido como funcao no Ghidra).            */
 void pb_ajustes_desempenho_ativar(uint8_t *painel)
 {
-    void *nome = NULL, *caminho = NULL, *tmp = NULL;
+    DelphiStr nome = NULL, caminho = NULL, tmp = NULL;
 
-    decodificar_str(*PTR_DAT_13811378, (void *)0x136b089c, 0x1c,
-                    &tmp, 0x28, 0x101, 1);
-    nome = tmp;
+    decodificar_string(*PTR_DAT_13811378, (void *)0x136b089c, 0x1c,
+                       &tmp, 0x28, 0x101);
+    str_converter(&nome, tmp);                        /* FUN_1314c690      */
 
     estado_obter_chave(*PTR_DAT_13811568, &caminho);
-    estado_gravar(*PTR_DAT_13811568, caminho, nome);
+    estado_gravar(*PTR_DAT_13811568, caminho, nome, 1); /* PUSH 1 @ 0x136b07b2 */
 
     vcl_set_visible(*(void **)(painel + 0x518), 0);
     vcl_set_visible(*(void **)(painel + 0x51c), 1);
@@ -2038,25 +2142,26 @@ void pb_ajustes_desempenho_ativar(uint8_t *painel)
  * Nenhum comando "reg add" de Game Bar e executado aqui; os comandos de
  * GameDVR/GameBar estao em outros lotes.                                 */
 extern int  FUN_13551e10(void *obj);
-extern void FUN_13552fac(void *obj, void *mensagem, int tipo);   /* dialogo */
+extern void FUN_13552fac(void *obj, DelphiStr mensagem, int ecx,
+                         int pilha);                              /* dialogo */
 
 void pb_gamebar_desativar(uint8_t *painel)                       /* 0x136b1f48 */
 {
-    void *tmp = NULL, *msg = NULL, *nome = NULL, *caminho = NULL;
+    DelphiStr tmp = NULL, msg = NULL, nome = NULL, caminho = NULL;
 
     if (FUN_13551e10(*PTR_DAT_13811568) == 7) {
-        decodificar_str(*PTR_DAT_13811378, (void *)0x136b20a8, 2,
-                        &tmp, 0x27, 0x52, 0);
-        msg = tmp;                                   /* via FUN_1314c690   */
-        FUN_13552fac(*PTR_DAT_13811568, msg, 0);
+        decodificar_string(*PTR_DAT_13811378, (void *)0x136b20a8, 2,
+                           &tmp, 0x27, 0x52);
+        str_converter(&msg, tmp);                    /* FUN_1314c690       */
+        FUN_13552fac(*PTR_DAT_13811568, msg, 0, 0);  /* ECX = 0; PUSH 0 @ 0x136b1f74 */
         return;
     }
 
-    decodificar_str(*PTR_DAT_13811378, (void *)0x136b20e8, 0x1d,
-                    &tmp, 0x10, 0x34, 1);
-    nome = tmp;
+    decodificar_string(*PTR_DAT_13811378, (void *)0x136b20e8, 0x1d,
+                       &tmp, 0x10, 0x34);
+    str_converter(&nome, tmp);
     estado_obter_chave(*PTR_DAT_13811568, &caminho);
-    estado_gravar(*PTR_DAT_13811568, caminho, nome);
+    estado_gravar(*PTR_DAT_13811568, caminho, nome, 1); /* PUSH 1 @ 0x136b1fb5 */
 
     vcl_set_visible(*(void **)(painel + 0x470), 0);
     vcl_set_visible(*(void **)(painel + 0x474), 1);
@@ -2100,11 +2205,26 @@ static const wchar_t *const k_mmcss_low_latency[] = {
  *
  *  INFERIDO: a ligacao deste par de handlers com o card "INTERFACE SEM
  *  DELAY" da lista de features vem do texto dos toasts, nao de uma
- *  referencia direta no binario.  O item de recomendacao "INTERFACE"
- *  (@ 0x136ed1e0, label "Interface otimizada" @ 0x136ed2c8, descricao
- *  "Aplica os ajustes recomendados de interface para melhor estabilidade e
- *  fluidez." @ 0x136ed200, icone "window") e outro mecanismo: e despachado
- *  pela lista generica de recomendacoes e nao chama estes handlers.
+ *  referencia direta no binario.
+ *
+ *  CANDIDATO MAIS DIRETO: o card INTERFACEDELAY da tela FPS Game Booster
+ *  (TGameBooster).  O item de recomendacao "INTERFACE" (@ 0x136ed1e0, label
+ *  "Interface otimizada" @ 0x136ed2c8, icone "window") e despachado por
+ *  0x136f78d0 para o metodo publicado INTERFACEDELAY_OFFClick @ 0x1372d4b8
+ *  (par INTERFACEDELAY_ONClick @ 0x1372d948), que NAO chama os handlers de
+ *  transparencia abaixo.  O que 0x1372d4b8 faz (desmontado):
+ *    - se o jogo nao esta em execucao (PTR_DAT_13810cd8/13811928) -> aviso;
+ *    - exibe o controle +0x5dc;
+ *    - grava DOIS pares chave/valor cifrados no store JSON (FUN_1369b158;
+ *      blobs 0x1372d7f8/0x1372d810 e 0x1372d7f8/0x1372d828) e remove uma
+ *      chave (FUN_1369ae6c, blob 0x1372d844);
+ *    - oculta +0x4d4, exibe +0x4cc;
+ *    - vtable[0x188](*(*PTR_DAT_1381110c + 0x4ac), 1)   (INFERIDO: SetChecked
+ *      de um controle do overlay, como no secao 19/secao 20);
+ *    - se EDX != 0, mostra um card (FUN_1358027c, sem icone).
+ *  Nenhum comando de shell e executado ali; os nomes das chaves gravadas
+ *  sao cifrados.  INFERIDO: o efeito real e aplicado por quem le essas
+ *  chaves (nao rastreado).
  *
  *  OBSERVACAO IMPORTANTE (comportamento do proprio ReetFPS):
  *    os textos dos toasts estao TROCADOS em relacao aos comandos.
@@ -2152,14 +2272,18 @@ static const wchar_t *const k_mmcss_low_latency[] = {
  *    de estado; o nome gravado pelos handlers vem ofuscado, ver abaixo)
  *
  *  BLOCOS RELACIONADOS QUE NAO FAZEM PARTE DESTES HANDLERS
- *    - VisualFX "melhor desempenho": funcao @ 0x135f373c (26 cmds), inclui
- *      VisualFXSetting=0 @ 0x135f3844 e VisualFXSettingPerUser=0
- *      @ 0x135f3940.  Chamada apenas por outro handler (CALL @ 0x136b0a4a,
- *      botoes +0x51c/+0x518), sem toast.
- *    - VisualFX "restaurar": funcao @ 0x135f22f0 (35 cmds), inclui
- *      VisualFXSetting=2 @ 0x135f2458 e PerUser=2 @ 0x135f2554.  Chamada
- *      por CALL @ 0x136b081d.
- *      INFERIDO: estes dois handlers (0x136b08xx/0x136b0axx) parecem ser o
+ *    (Valores de VisualFXSetting no Windows: 0 = deixar o Windows escolher,
+ *     1 = melhor aparencia, 2 = melhor desempenho, 3 = personalizado.)
+ *    - Funcao @ 0x135f373c (26 cmds): inclui VisualFXSetting=0 @ 0x135f3844
+ *      e VisualFXSettingPerUser=0 @ 0x135f3940, ou seja, devolve a escolha
+ *      ao Windows (padrao).  Chamada apenas por outro handler (CALL
+ *      @ 0x136b0a4a, botoes +0x51c/+0x518), sem toast.
+ *    - Funcao @ 0x135f22f0 (35 cmds, o lote "Ajustes de desempenho" do secao 15):
+ *      inclui VisualFXSetting=2 @ 0x135f2458 e PerUser=2 @ 0x135f2554, ou
+ *      seja, "ajustar para melhor desempenho".  Chamada por CALL @ 0x136b081d
+ *      (handler @ 0x136b0798, secao 15 A).
+ *      INFERIDO: estes dois handlers (0x136b0798, secao 15 A, e o que contem o
+ *      CALL @ 0x136b0a4a) parecem ser o
  *      item "EFFECTS_ON" (@ 0x136b6adc); nao ha referencia direta.
  *    - DisableAnimations=1 (@ 0x135d3e50) esta dentro do bloco gigante
  *      @ 0x135d2d98 (232 cmds), registrado sob a chave "TweaksAll"
@@ -2170,29 +2294,9 @@ static const wchar_t *const k_mmcss_low_latency[] = {
  *      esta feature.  GameMode=0 (@ 0x135eb018) fica fora dessa funcao.
  */
 
-/* Executor de lote: recebe array de UnicodeString e o indice High.          */
-extern void executar_lote_cmd(const wchar_t **cmds, int high);  /* FUN_135d1fb8 */
-
-/* Decodificador de strings ofuscadas do ReetFPS (nao mostra nada na tela). */
-extern void decodificar_string(void *ctx, const void *blob, int tam,
-                               DelphiStr *saida, int k1, int k2, int k3); /* FUN_134a8d98 */
-
-/* Escrita de estado no registro do ReetFPS (TRegistry).                     */
-extern void reet_settings_preparar(void *settings, DelphiStr *saida);   /* FUN_135529c4 */
-extern void reet_settings_gravar(void *settings, DelphiStr chave,
-                                 DelphiStr valor);                       /* FUN_13552a50 */
-
-extern void FUN_132abec4(int controle, int visivel);      /* TControl.Visible */
-extern int *PTR_DAT_13811568;   /* objeto de configuracoes do ReetFPS          */
-extern int *PTR_DAT_13811378;   /* contexto do decodificador de strings        */
-
-/* Card de notificacao.  Convencao register do Delphi: EAX=titulo, EDX=corpo,
- * ECX=0x1194; demais 13 argumentos vao pela pilha (confirmado nos PUSH antes
- * de CALL 0x1358027c em 0x136b36b8 e 0x136b38f8).                            */
-extern void FUN_1358027c(const wchar_t *titulo, const wchar_t *corpo, int p3,
-                         int p4, int p5, int p6, int p7, int p8, int p9,
-                         const wchar_t *icone, int c1, int c2, int c3,
-                         int f1, int f2, int f3);
+/* executar_lote, decodificar_string, vcl_set_visible e FUN_1358027c: ver
+ * AUXILIARES COMPARTILHADOS; estado_obter_chave/estado_gravar (FUN_135529c4 /
+ * FUN_13552a50) e str_converter: ver secao 14.                                    */
 
 /* FUN_135e7fdc @ 0x135e7fdc -- desliga transparencia e efeitos do DWM.      */
 static void interface_bloco_desligar(void)
@@ -2205,7 +2309,7 @@ static void interface_bloco_desligar(void)
         /* 0x135e843c */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\DWM\" /v ColorPrevalence /t REG_DWORD /d 0 /f",
         /* 0x135e8510 */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize\" /v ColorPrevalence /t REG_DWORD /d 1 /f",
     };
-    executar_lote_cmd(cmds, 5);                              /* EDX = 5 (High) */
+    executar_lote(cmds, 5);                                  /* EDX = 5 (High) */
 }
 
 /* FUN_135e79a4 @ 0x135e79a4 -- religa transparencia e efeitos do DWM.       */
@@ -2219,20 +2323,21 @@ static void interface_bloco_religar(void)
         /* 0x135e7e04 */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\DWM\" /v ColorPrevalence /t REG_DWORD /d 1 /f",
         /* 0x135e7ed8 */ L"reg add \"HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize\" /v ColorPrevalence /t REG_DWORD /d 0 /f",
     };
-    executar_lote_cmd(cmds, 5);
+    executar_lote(cmds, 5);
 }
 
-/* Parte comum dos dois handlers: decodifica um texto ofuscado e o grava no
- * registro do ReetFPS.  O conteudo decodificado nao foi recuperado.
- * blob = 0x136b3700 (religar) ou 0x136b3940 (desligar), tam = 0x11a,
- * chaves (0x46, 0x15, 1) ou (0x46, 0x15, 0).                                 */
-static void interface_gravar_estado(const void *blob, int k3)
+/* Parte comum dos dois handlers (mesmo padrao do secao 14): decodifica o nome do
+ * valor de estado e grava-o com WriteInteger.  O nome decodificado nao foi
+ * recuperado.  blob = 0x136b3700 (religar) ou 0x136b3940 (desligar),
+ * tam = 0x11a, chaves (0x46, 0x15); valor gravado = 1 (religar, PUSH 1
+ * @ 0x136b3616) ou 0 (desligar).                                             */
+static void interface_gravar_estado(const void *blob, int valor)
 {
-    DelphiStr dec = NULL, tmp = NULL, ref = NULL;
-    decodificar_string((void *)*PTR_DAT_13811378, blob, 0x11a, &dec, 0x46, 0x15, k3);
-    str_assign(&tmp, dec);                                          /* FUN_1314c690 */
-    reet_settings_preparar((void *)*PTR_DAT_13811568, &ref);
-    reet_settings_gravar((void *)*PTR_DAT_13811568, ref, tmp);
+    DelphiStr dec = NULL, nome = NULL, caminho = NULL;
+    decodificar_string(*PTR_DAT_13811378, blob, 0x11a, &dec, 0x46, 0x15);
+    str_converter(&nome, dec);                                      /* FUN_1314c690 */
+    estado_obter_chave(*PTR_DAT_13811568, &caminho);                /* FUN_135529c4 */
+    estado_gravar(*PTR_DAT_13811568, caminho, nome, valor);         /* FUN_13552a50 */
 }
 
 /* Handler @ 0x136b383c -- comandos DESLIGAM a transparencia; o toast exibido
@@ -2240,8 +2345,8 @@ static void interface_gravar_estado(const void *blob, int k3)
 void pb_interface_transparencia_desligar(uint8_t *painel)
 {
     interface_gravar_estado((const void *)0x136b3940, 0);
-    FUN_132abec4(*(int *)(painel + 0x4b0), 0);
-    FUN_132abec4(*(int *)(painel + 0x4ac), 1);
+    vcl_set_visible(*(void **)(painel + 0x4b0), 0);
+    vcl_set_visible(*(void **)(painel + 0x4ac), 1);
     interface_bloco_desligar();                                     /* FUN_135e7fdc */
 
     FUN_1358027c(L"ReetFPS",                                         /* 0x136b3a60 */
@@ -2258,8 +2363,8 @@ void pb_interface_transparencia_desligar(uint8_t *painel)
 void pb_interface_transparencia_religar(uint8_t *painel)
 {
     interface_gravar_estado((const void *)0x136b3700, 1);
-    FUN_132abec4(*(int *)(painel + 0x4ac), 0);
-    FUN_132abec4(*(int *)(painel + 0x4b0), 1);
+    vcl_set_visible(*(void **)(painel + 0x4ac), 0);
+    vcl_set_visible(*(void **)(painel + 0x4b0), 1);
     interface_bloco_religar();                                      /* FUN_135e79a4 */
 
     FUN_1358027c(L"ReetFPS",                                         /* 0x136b382c */
@@ -2308,16 +2413,17 @@ void pb_interface_transparencia_religar(uint8_t *painel)
  *  INI do jogo. Como o JSON chega ao disco nao foi rastreado aqui.
  *
  *  ITEM DE RECOMENDACAO: "FPS_SELECTION_INDEX" ("FPS recomendado") na lista
- *  de FUN_136ec13c (ver §9/§18). O despachante FUN_136f78d0 liga essa chave
- *  a FUN_137294d8, que troca os botoes +0x478/+0x474 do form principal e
- *  chama vtable+0x1cc do objeto em PTR_DAT_13811880 (INFERIDO: exibe este
- *  formulario). Sem o jogo aberto chama FUN_135fcd18.
+ *  de FUN_136ec13c (ver secao 9/secao 18). O despachante FUN_136f78d0 liga essa chave
+ *  a 0x137294d8 = FPSUNLOCKED_OFFClick do TGameBooster (secao 20), que troca os
+ *  botoes +0x478/+0x474 do form e chama vtable+0x1cc do objeto em
+ *  PTR_DAT_13811880 (INFERIDO: exibe este formulario). Sem o jogo aberto
+ *  chama FUN_135fcd18.
  *
  *  LEITURA NO INICIO: FUN_13693750 @ 0x13693750 le "FPS_SELECTION_INDEX"
  *  (@ 0x136937e8) do JSON (FUN_1369b8f4), faz Trim (FUN_1316c638) e
  *  TryStrToInt (FUN_1316d204); se nao houver valor, usa 3.
  *
- *  ONDE O FPS CHEGA AO JOGO: NAO LOCALIZADO. O TRPPBConfig (§19) grava a
+ *  ONDE O FPS CHEGA AO JOGO: NAO LOCALIZADO. O TRPPBConfig (secao 19) grava a
  *  secao [Graphics] ("Graphics" @ 0x1358595c) de
  *  <pasta do jogo>\EnvSet\env_settings.ini (@ 0x13584570) em FUN_13585130;
  *  ali FPSType vem do campo +0x51c (chave @ 0x13585acc) e FPSVal do campo
@@ -2326,6 +2432,24 @@ void pb_interface_transparencia_religar(uint8_t *painel)
  *  acessado pelo proprio form, e os acessos a +0x51c perto de 0x1372b36d /
  *  0x1372b6ce sao toggles do form principal, nao do TRPPBConfig.
  */
+
+/* Auxiliares desta secao (config_gravar e vcl_set_text: AUXILIARES
+ * COMPARTILHADOS no inicio do arquivo). */
+extern void  config_ler(void *cfg, const wchar_t *chave);                 /* FUN_1369b87c */
+extern void  config_ler_str(void *cfg, const wchar_t *chave, DelphiStr *v); /* FUN_1369b8f4 */
+extern void  trim(DelphiStr s, DelphiStr *dst);                           /* FUN_1316c638 */
+extern bool  trystrtoint(DelphiStr s, int *v);                            /* FUN_1316d204 */
+extern void  inttostr(int v, DelphiStr *dst);                             /* FUN_1316cf60 */
+extern void  fpslimit_set_indice(void *controle, int idx);                /* FUN_1369190c */
+extern void  trackbar_set_posicao(void *controle, int pos);               /* FUN_132db2e0 */
+extern void  fps_rotulo_preset(int idx, DelphiStr *dst);                  /* FUN_13693810 */
+extern void  fps_legenda_preset(int idx, DelphiStr *dst);                 /* FUN_13693a64 */
+extern void  fps_mostrar_rotulos(void);                                   /* FUN_13693db4 */
+extern void  fps_atualizar_rotulo(int idx);                               /* FUN_13693f0c */
+extern void *lista_item(int controle_lista);           /* FUN_13575414 + FUN_135750f8 */
+extern void  item_set_texto(void *item, DelphiStr texto);                 /* FUN_13574f7c */
+extern void **PTR_DAT_13810970;  /* instancia do form TGameBooster (tela FPS Game Booster) */
+extern int   DAT_1380f724, _DAT_1380f728, _DAT_1380f72c, DAT_13819b44;
 
 /*
  * fps_ler_indice_salvo  --  FUN_13693750 @ 0x13693750
@@ -2479,25 +2603,10 @@ void pb_fps_definir_preset(int index)
  *      com strings ofuscadas) remove tambem pares relacionados;
  *   4. FUN_133dd2e0: adiciona o novo par;
  *   5. FUN_133d9aac: serializa e grava de volta em PTR_DAT_13811610.
+ *  (Declarada em AUXILIARES COMPARTILHADOS: EAX = store, EDX = chave,
+ *   ECX = valor.)
  */
 
-/* Prototipos desta secao. */
-extern void  config_ler(void *cfg, const wchar_t *chave);                 /* FUN_1369b87c */
-extern void  config_gravar(void *cfg, const wchar_t *chave, DelphiStr v); /* FUN_1369b158 */
-extern void  config_ler_str(void *cfg, const wchar_t *chave, DelphiStr *v); /* FUN_1369b8f4 */
-extern void  trim(DelphiStr s, DelphiStr *dst);                           /* FUN_1316c638 */
-extern bool  trystrtoint(DelphiStr s, int *v);                            /* FUN_1316d204 */
-extern void  inttostr(int v, DelphiStr *dst);                             /* FUN_1316cf60 */
-extern void  fpslimit_set_indice(void *controle, int idx);                /* FUN_1369190c */
-extern void  trackbar_set_posicao(void *controle, int pos);               /* FUN_132db2e0 */
-extern void  fps_rotulo_preset(int idx, DelphiStr *dst);                  /* FUN_13693810 */
-extern void  fps_legenda_preset(int idx, DelphiStr *dst);                 /* FUN_13693a64 */
-extern void  fps_mostrar_rotulos(void);                                   /* FUN_13693db4 */
-extern void  fps_atualizar_rotulo(int idx);                               /* FUN_13693f0c */
-extern void  vcl_set_text(void *controle, DelphiStr texto);               /* FUN_132ac010 */
-extern void *lista_item(int controle_lista);           /* FUN_13575414 + FUN_135750f8 */
-extern void  item_set_texto(void *item, DelphiStr texto);                 /* FUN_13574f7c */
-extern int   DAT_1380f724, _DAT_1380f728, _DAT_1380f72c, DAT_13819b44;
 
 
 /* ===========================================================================
@@ -2509,7 +2618,7 @@ extern int   DAT_1380f724, _DAT_1380f728, _DAT_1380f72c, DAT_13819b44;
  *  generica de recomendacoes. Nao existe um painel proprio.
  *
  *  LISTA DE RECOMENDACOES: FUN_136ec13c @ 0x136ec13c (a mesma tabela que a
- *  §9 descreve). Cada item e criado por FUN_136ebbb4(painel, chave, titulo,
+ *  secao 9 descreve). Cada item e criado por FUN_136ebbb4(painel, chave, titulo,
  *  1, grupo, icone, descricao):
  *    grupo +0x310 (ajustes do Windows): Energia_ON ("Windows Turbo +FPS"),
  *      Hibernate_ON, Cortana_ON, TarefaTelemetria_ON, Superfetch_ON,
@@ -2520,28 +2629,23 @@ extern int   DAT_1380f724, _DAT_1380f728, _DAT_1380f72c, DAT_13819b44;
  *  Superfetch_ON e um item separado, do outro grupo: NAO faz parte do
  *  LOADINGMAP.
  *
- *  DESPACHANTE: FUN_136f78d0 @ 0x136f78d0 compara a chave do item com as
- *  strings em 0x136f7ae0..0x136f7c24 e chama o handler pelo invocador
- *  FUN_136f782c(codigo, form_principal):
- *    FLUIDEZMAX / FLUIDEZMAXIMA  -> 0x1372a03c
- *    FULLSCREEN                  -> 0x1372dfb0
- *    OPTIMIZER_PB_MANAGER        -> 0x13729094
- *    FPS_SELECTION_INDEX         -> 0x137294d8  (abre o form da §17)
- *    PRIORITYPB                  -> 0x1372e888
- *    LOADINGMAP  @ 0x136f7be0    -> FUN_13728d20
- *    INTERFACE   @ 0x136f7c04    -> 0x1372d4b8
- *    REETGAMEMODE @ 0x136f7c24   -> 0x1372c00c
- *  Chave desconhecida gera excecao (mensagem @ 0x136f7c4c). Se o form
- *  principal nao existe, a excecao usa "GameBooster nao esta criado."
- *  @ 0x136f7a98. Estas strings sao comparacoes do despachante, NAO chaves
- *  de registro.
+ *  DESPACHANTE: rotina @ 0x136f78d0 (tabela completa chave -> handler ->
+ *  nome publicado no secao 9).  LOADINGMAP (@ 0x136f7be0) -> 0x13728d20, que e o
+ *  metodo publicado MAPLOADING_OFFClick do TGameBooster, ou seja, o card
+ *  MAPLOADING da tela FPS Game Booster (par MAPLOADING_ONClick @ 0x13728fc8).
+ *  O form passado ao handler e *(PTR_DAT_13810970), a instancia do
+ *  TGameBooster: se for nula, o despachante levanta "GameBooster nao esta
+ *  criado." @ 0x136f7a98.  Chave desconhecida gera excecao (@ 0x136f7c4c).
  *
- *  HANDLER: FUN_13728d20 @ 0x13728d20
- *    Mesmo padrao das §20/§21, com o objeto em PTR_DAT_1381110c + 0x4b0:
- *    troca os botoes do painel, chama vtable+0x188(obj, 1), grava um par no
- *    JSON de configuracoes e, se pedido, mostra o card. Chave, valor e
- *    textos do card sao blobs ofuscados (DAT_13728ef8, DAT_13728f10,
- *    DAT_13728f4c, LAB_13728fbc).
+ *  HANDLER: MAPLOADING_OFFClick @ 0x13728d20 (desmontado)
+ *    - se o jogo nao esta em execucao -> FUN_135fcd18 (aviso) e sai;
+ *    - oculta +0x4e0, exibe +0x4dc;
+ *    - vtable[0x188](*(*PTR_DAT_1381110c + 0x4b0), 1);
+ *    - grava no store JSON a CHAVE decodificada do blob 0x13728f10 (tam
+ *      0x2e) com o VALOR do blob 0x13728ef8 (tam 0xb8) -- FUN_1369b158;
+ *    - se EDX != 0, card: titulo = blob 0x13728fbc, corpo = blob
+ *      0x13728f4c, icone "icon.png" @ 0x13728f2c.
+ *    Chave, valor e textos sao cifrados; o texto em claro nao foi recuperado.
  *
  *  O QUE NAO FOI COMPROVADO
  *    Que comandos o sistema executa quando o objeto em +0x4b0 recebe
@@ -2555,77 +2659,109 @@ extern int   DAT_1380f724, _DAT_1380f728, _DAT_1380f72c, DAT_13819b44;
  *    rastreado.
  */
 
-/*
- * pb_loadingmap_ativar  --  FUN_13728d20 @ 0x13728d20
- *
- * form       : form principal (passado pelo despachante)
- * mostrar_card: != 0 exibe o card de notificacao
- */
-void pb_loadingmap_ativar(int form, int mostrar_card)
+/* Chama o metodo vtable[0x188] de um controle VCL.
+ * INFERIDO: setter Checked (o mesmo metodo e usado em todos os cards do
+ * TGameBooster e no toggle da mira, secao 13).                                   */
+static void controle_vt188(void *controle, int ligado)
 {
+    (*(void (**)(void *, int))(*(uint8_t **)controle + 0x188))(controle, ligado);
+}
+
+/*
+ * pb_loadingmap_ativar  --  MAPLOADING_OFFClick @ 0x13728d20
+ *
+ * booster     : Self (instancia do TGameBooster, em EAX)
+ * mostrar_card: EDX; != 0 exibe o card de notificacao
+ */
+void pb_loadingmap_ativar(uint8_t *booster, int mostrar_card)
+{
+    DelphiStr tmp = NULL, chave = NULL, valor = NULL;
+
     if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
-        pb_jogo_nao_aberto();                                 /* FUN_135fcd18 */
+        jogo_nao_encontrado();                                /* FUN_135fcd18 */
         return;
     }
 
-    vcl_set_visible(*(void **)(form + 0x4e0), 0);             /* FUN_132abec4 */
-    vcl_set_visible(*(void **)(form + 0x4dc), 1);
+    vcl_set_visible(*(void **)(booster + 0x4e0), 0);
+    vcl_set_visible(*(void **)(booster + 0x4dc), 1);
 
-    {
-        int *obj = *(int **)(*(int *)PTR_DAT_1381110c + 0x4b0);
-        (*(void (**)(int *, int))(*obj + 0x188))(obj, 1);
-    }
+    controle_vt188(*(void **)((uint8_t *)*PTR_DAT_1381110c + 0x4b0), 1);
 
-    {
-        DelphiStr chave = NULL, valor = NULL;
-        decodificar_string(&chave, (void *)0x13728ef8);       /* FUN_134a8d98 */
-        decodificar_string(&valor, (void *)0x13728f10);
-        config_gravar(*(void **)PTR_DAT_13811bac, chave, valor); /* FUN_1369b158 */
-    }
+    decodificar_string(*PTR_DAT_13811378, (void *)0x13728ef8, 0xb8, &tmp, 0x15, 5);
+    str_converter(&valor, tmp);                               /* FUN_1314c690 */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x13728f10, 0x2e, &tmp, 3, 0x55);
+    str_converter(&chave, tmp);
+    config_gravar(*PTR_DAT_13811bac, chave, valor);           /* FUN_1369b158 */
 
     if (mostrar_card) {
         DelphiStr titulo = NULL, corpo = NULL;
-        decodificar_string(&titulo, (void *)0x13728f4c);
-        decodificar_string(&corpo,  (void *)0x13728fbc);
-        notificacao_card(titulo, corpo, 0x1194);              /* FUN_1358027c */
+        decodificar_string(*PTR_DAT_13811378, (void *)0x13728f4c, 0xeb, &tmp, 0x51, 0xdf);
+        str_converter(&corpo, tmp);
+        decodificar_string(*PTR_DAT_13811378, (void *)0x13728fbc, 0xa1, &tmp, 0x102, 0x30);
+        str_converter(&titulo, tmp);
+        FUN_1358027c(titulo, corpo, 0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+                     L"icon.png",                             /* 0x13728f2c */
+                     -1, -1, -1, 1, 1, 1);
     }
 }
-
-/* Prototipos desta secao. */
-extern void pb_jogo_nao_aberto(void);                              /* FUN_135fcd18 */
-extern void vcl_set_visible(void *controle, int visivel);          /* FUN_132abec4 */
-extern void decodificar_string(DelphiStr *dst, void *blob);        /* FUN_134a8d98 + FUN_1314c690 */
-extern void notificacao_card(DelphiStr titulo, DelphiStr corpo, int duracao_ms); /* FUN_1358027c */
 
 
 /* ===========================================================================
  *  19) MINI-MAP OFF
  * ===========================================================================
  *
- *  MECANISMO NAO LOCALIZADO NO BINARIO.
+ *  O "MINI-MAP OFF" e o card MINIMAP da tela FPS Game Booster (classe
+ *  TGameBooster).  O texto "minimap" nao aparece como string comum porque
+ *  esta so na RTTI: os nomes publicados dos metodos e campos sao
+ *  ShortStrings, invisiveis para uma busca de strings Unicode.
  *
- *  O nome "MINI-MAP OFF" vem da lista de funcionalidades anunciadas; ele
- *  NAO aparece como string no executavel (busca por "mini", "minimap",
- *  "radar", "mapa" e "missao": nenhum resultado relevante).  Tambem nao
- *  existe chave de item de perfil para ele: o despachante de itens do
- *  PointBlank (codigo em 0x136f78d0, ver abaixo) conhece apenas
- *  FLUIDEZMAX/FLUIDEZMAXIMA, FULLSCREEN, OPTIMIZER_PB_MANAGER,
- *  FPS_SELECTION_INDEX, PRIORITYPB, LOADINGMAP, INTERFACE e REETGAMEMODE.
+ *  METODOS PUBLICADOS (tabela de metodos do TGameBooster, registros
+ *  [tamanho:word][endereco][nome] -- conferidos byte a byte @ 0x13724c18):
+ *    MINIMAP_OFFClick  @ 0x13729094   liga a opcao (botao visivel quando ela
+ *                                     esta desligada)
+ *    MINIMAP_ONClick   @ 0x13729410   desfaz
+ *  CAMPOS: MINIMAP_ON em Self+0x58c, MINIMAP_OFF em Self+0x590 (os dois
+ *  botoes que os handlers trocam).
  *
- *  O unico vestigio literal e o nome de icone "map-off" @ 0x13441d9c, que
- *  fica numa tabela de icones (nome -> caminho SVG, ao lado de "fullscreen"
- *  @ 0x13441d18).  Isso prova que a UI tem um icone de "mapa desligado", nao
- *  qual codigo ele dispara.
+ *  O despachante de recomendacoes (0x136f78d0, ver secao 9) chama
+ *  MINIMAP_OFFClick para a chave "OPTIMIZER_PB_MANAGER" (label "Otimizacao
+ *  Inteligente").  O binario e assim; o motivo de uma chave com esse nome
+ *  cair no botao MINIMAP nao e conhecido.
  *
- *  O que esta comprovado e a classe que o ReetFPS usa para ler e gravar o
- *  arquivo de configuracao do jogo, TRPPBConfig.  Ela contem a chave
- *  [Game] Enable_MissionIndicator, que e a candidata mais provavel para um
- *  "mini-mapa off" -- mas nenhum trecho encontrado grava essa chave com 0.
+ *  O QUE MINIMAP_OFFClick FAZ (desmontado, sem funcao no Ghidra):
+ *    1. Se o jogo nao esta em execucao (PTR_DAT_13810cd8 e PTR_DAT_13811928
+ *       zerados) chama FUN_135fcd18 (aviso) e sai.
+ *    2. Grava no store JSON (FUN_1369b158) a CHAVE do blob 0x137292f0
+ *       (tam 0x2f) com o VALOR do blob 0x137292d8 (tam 0xb8).
+ *    3. Oculta MINIMAP_OFF (+0x590) e exibe MINIMAP_ON (+0x58c).
+ *    4. vtable[0x188](*(*PTR_DAT_1381110c + 0x510), 1)
+ *       (INFERIDO: setter Checked de um controle do overlay).
+ *    5. Se EDX != 0, card: titulo = blob 0x13729404; corpo = tres blobs
+ *       (0x13729328, 0x13729370, 0x137293c0) unidos por "\r\n"
+ *       (AnsiString @ 0x13729360); icone "icon.png" @ 0x13729308.
+ *  MINIMAP_ONClick remove a mesma chave (FUN_1369ae6c; blob 0x137294cc tem
+ *  os mesmos bytes de 0x137292f0), reexibe MINIMAP_OFF, oculta MINIMAP_ON e
+ *  chama vtable[0x188](..+0x510, 0).  Nao mostra card.
+ *
+ *  O QUE NAO FOI COMPROVADO
+ *    - O nome da chave gravada e todos os textos do card sao cifrados
+ *      (FUN_134a8d98); o texto em claro nao foi recuperado.
+ *    - Nenhum dos dois handlers escreve no jogo nem no env_settings.ini.
+ *      INFERIDO: quem le essa chave do JSON (ou o controle em +0x510)
+ *      aplica o efeito real -- nao rastreado.
+ *    - O nome de icone "map-off" @ 0x13441d9c existe numa tabela de icones
+ *      (nome -> SVG); a ligacao com este card nao foi verificada.
+ *
+ *  CONTEXTO: o arquivo de configuracao do jogo e lido/gravado pela classe
+ *  TRPPBConfig, abaixo.  Ela tem a chave [Game] Enable_MissionIndicator
+ *  ("indicador de missao" -- no PB e o marcador de objetivo, nao
+ *  necessariamente o minimapa), mas nenhum trecho encontrado a grava a
+ *  partir do card MINIMAP.
  *
  *  CLASSE TRPPBConfig  (unidade uRPPBConfig)
  *    TypeInfo  @ 0x13582610  (tkClass, nome "TRPPBConfig")
  *    VMT       @ 0x135818e0
- *    52 propriedades publicadas; a tabela de propriedades comeca em ~0x13582640
+ *    52 propriedades publicadas; a tabela de propriedades comeca em aprox. 0x13582640
  *
  *    Carregar : FUN_135845f4 @ 0x135845f4   (le todas as chaves do .ini)
  *    Salvar   : FUN_13585130 @ 0x13585130   (grava todas as chaves no .ini)
@@ -2702,7 +2838,7 @@ extern void  pbconfig_caminho_ini(void *cfg, DelphiStr *dst); /* FUN_1358450c */
 /*
  * pbconfig_carregar  --  FUN_135845f4 @ 0x135845f4
  *
- * Trecho reconstruido: so as chaves relevantes para §19 e §22.  A funcao
+ * Trecho reconstruido: so as chaves relevantes para secao 19 e secao 22.  A funcao
  * original le as 34 chaves da tabela acima, na mesma ordem.
  */
 void pbconfig_carregar(uint8_t *cfg)
@@ -2745,10 +2881,69 @@ void pbconfig_salvar(uint8_t *cfg)
     ini_liberar(ini);
 }
 
-/* INFERIDO: se o "MINI-MAP OFF" existe como acao do ReetFPS, o caminho mais
- * provavel e carregar o TRPPBConfig, zerar Enable_MissionIndicator (+0x538)
- * e salvar.  Nenhum codigo que faca essa escrita foi localizado; por isso
- * nao ha funcao pb_minimap_off_ativar() nesta reconstrucao.                 */
+/*
+ * pb_minimap_off_ativar  --  MINIMAP_OFFClick @ 0x13729094
+ *
+ * booster     : Self (instancia do TGameBooster, em EAX)
+ * mostrar_card: EDX; != 0 exibe o card
+ */
+#define BOOSTER_MINIMAP_ON   0x58c
+#define BOOSTER_MINIMAP_OFF  0x590
+
+extern void str_concat_n(DelphiStr *dst, int n, ...);         /* FUN_1314c17c */
+
+void pb_minimap_off_ativar(uint8_t *booster, int mostrar_card)
+{
+    DelphiStr tmp = NULL, chave = NULL, valor = NULL;
+
+    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
+        jogo_nao_encontrado();                                /* FUN_135fcd18 */
+        return;
+    }
+
+    decodificar_string(*PTR_DAT_13811378, (void *)0x137292d8, 0xb8, &tmp, 0x15, 5);
+    str_converter(&valor, tmp);                               /* FUN_1314c690 */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x137292f0, 0x2f, &tmp, 0xe, 0x5f);
+    str_converter(&chave, tmp);
+    config_gravar(*PTR_DAT_13811bac, chave, valor);           /* FUN_1369b158 */
+
+    vcl_set_visible(*(void **)(booster + BOOSTER_MINIMAP_OFF), 0);
+    vcl_set_visible(*(void **)(booster + BOOSTER_MINIMAP_ON),  1);
+
+    controle_vt188(*(void **)((uint8_t *)*PTR_DAT_1381110c + 0x510), 1);
+
+    if (mostrar_card) {
+        DelphiStr s1 = NULL, s2 = NULL, s3 = NULL, corpo = NULL, titulo = NULL;
+        decodificar_string(*PTR_DAT_13811378, (void *)0x13729328, 0x70,  &s1, 0x12a, 0x7a);
+        decodificar_string(*PTR_DAT_13811378, (void *)0x13729370, 0x129, &s2, 3,    0xe2);
+        decodificar_string(*PTR_DAT_13811378, (void *)0x137293c0, 0xf7,  &s3, 0x45, 0x9e);
+        /* FUN_1314c17c (concatenacao de 5 partes) + FUN_1314c690:
+         * corpo = s1 + "\r\n" + s2 + "\r\n" + s3                            */
+        str_concat_n(&corpo, 5, s1, "\r\n", s2, "\r\n", s3);
+        decodificar_string(*PTR_DAT_13811378, (void *)0x13729404, 0x56, &tmp, 0x4a, 0xba);
+        str_converter(&titulo, tmp);
+        FUN_1358027c(titulo, corpo, 0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+                     L"icon.png",                             /* 0x13729308 */
+                     -1, -1, -1, 1, 1, 1);
+    }
+}
+
+/*
+ * pb_minimap_off_desfazer  --  MINIMAP_ONClick @ 0x13729410
+ */
+void pb_minimap_off_desfazer(uint8_t *booster)
+{
+    DelphiStr tmp = NULL, chave = NULL;
+
+    decodificar_string(*PTR_DAT_13811378, (void *)0x137294cc, 0x2f, &tmp, 0xe, 0x5f);
+    str_converter(&chave, tmp);
+    config_remover(*PTR_DAT_13811bac, chave);                 /* FUN_1369ae6c */
+
+    vcl_set_visible(*(void **)(booster + BOOSTER_MINIMAP_OFF), 1);
+    vcl_set_visible(*(void **)(booster + BOOSTER_MINIMAP_ON),  0);
+
+    controle_vt188(*(void **)((uint8_t *)*PTR_DAT_1381110c + 0x510), 0);
+}
 
 
 /* ===========================================================================
@@ -2757,14 +2952,16 @@ void pbconfig_salvar(uint8_t *cfg)
  *
  *  ONDE ESTA
  *    Formulario TGameBooster (unidade UGameBooster).  A tabela de metodos
- *    publicados (~0x13724890 em diante) liga cada botao ao seu handler:
+ *    publicados (aprox. 0x13724890 em diante) liga cada botao ao seu handler:
  *      FPSUNLOCKED_OFFClick  @ 0x137294d8   (botao FPSUNLOCKED_OFF, campo +0x478)
  *      FPSUNLOCKED_ONClick   @ 0x13729524   (botao FPSUNLOCKED_ON,  campo +0x474)
- *    Campos (tabela de campos publicados, ~0x13723ca0):
+ *    Campos (tabela de campos publicados, aprox. 0x13723ca0):
  *      Panel_FPSUNLOCKED +0x46c, Label1 +0x470, FPSUNLOCKED_ON +0x474,
  *      FPSUNLOCKED_OFF +0x478.
  *    O Ghidra nao criou funcoes nesses dois enderecos; o fluxo abaixo vem da
  *    desmontagem direta (disassemble_bytes 0x137294d8..0x13729574).
+ *    FPSUNLOCKED_OFFClick e tambem o handler que o despachante de
+ *    recomendacoes (secao 9) chama para a chave "FPS_SELECTION_INDEX".
  *
  *    Convencao dos botoes: o botao "_OFF" fica visivel quando o recurso esta
  *    desligado; clicar nele LIGA o recurso e troca para o botao "_ON".
@@ -2807,89 +3004,76 @@ void pbconfig_salvar(uint8_t *cfg)
  *    escreve no processo do Point Blank.
  */
 
+/* Auxiliares desta secao.  decodificar_string, config_remover,
+ * vcl_set_visible e jogo_nao_encontrado: AUXILIARES COMPARTILHADOS.
+ * trackbar_set_posicao (FUN_132db2e0), lista_item e item_set_texto
+ * (FUN_13575414/FUN_135750f8, FUN_13574f7c): declarados no secao 17.            */
+extern void **PTR_DAT_13811880;   /* form aberto pelo botao FPSUNLOCKED_OFF   */
+extern uint8_t *DAT_13819fac;     /* form com os rotulos de FPS (+0x514...)  */
+
 /* FUN_13728c00 @ 0x13728c00 */
 static void fps_desbloqueio_limpar_estado(void)
 {
-    DelphiStr chave = NULL;
+    DelphiStr tmp = NULL, chave = NULL;
 
-    FUN_132db2e0(*(int *)(*(int *)PTR_DAT_1381110c + 0x4fc), 0);
+    trackbar_set_posicao(*(void **)((uint8_t *)*PTR_DAT_1381110c + 0x4fc), 0);
 
-    decodificar_string(*(void **)PTR_DAT_13811378, (void *)0x13728cac, 0x46,
-                       /*chaves*/ &chave);
-    settings_remover(*(void **)PTR_DAT_13811bac, chave);      /* FUN_1369ae6c */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x13728cac, 0x46,
+                       &tmp, 0x7a, 0x38);
+    str_converter(&chave, tmp);                               /* FUN_1314c690 */
+    config_remover(*PTR_DAT_13811bac, chave);                 /* FUN_1369ae6c */
 
-    FUN_132abec4(*(int *)(DAT_13819fac + 0x560), 0);
+    vcl_set_visible(*(void **)(DAT_13819fac + 0x560), 0);
 }
 
 /* FUN_13728cc4 @ 0x13728cc4 */
 static void fps_desbloqueio_ocultar_rotulos(void)
 {
-    FUN_132abec4(*(int *)(DAT_13819fac + 0x554), 0);
-    FUN_132abec4(*(int *)(DAT_13819fac + 0x558), 0);
-    FUN_132abec4(*(int *)(DAT_13819fac + 0x560), 0);
-    FUN_132abec4(*(int *)(DAT_13819fac + 0x514), 0);
-    FUN_132abec4(*(int *)(DAT_13819fac + 0x55c), 0);
+    vcl_set_visible(*(void **)(DAT_13819fac + 0x554), 0);
+    vcl_set_visible(*(void **)(DAT_13819fac + 0x558), 0);
+    vcl_set_visible(*(void **)(DAT_13819fac + 0x560), 0);
+    vcl_set_visible(*(void **)(DAT_13819fac + 0x514), 0);
+    vcl_set_visible(*(void **)(DAT_13819fac + 0x55c), 0);
 }
 
 /* FPSUNLOCKED_OFFClick @ 0x137294d8  -- liga */
-void pb_desbloqueador_fps_ativar(int form)
+void pb_desbloqueador_fps_ativar(uint8_t *booster)
 {
     if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
-        FUN_135fcd18();                     /* aviso cifrado DAT_135fcdc0 */
+        jogo_nao_encontrado();              /* FUN_135fcd18 (aviso cifrado DAT_135fcdc0) */
         return;
     }
 
-    FUN_132abec4(*(int *)(form + 0x478), 0);    /* oculta FPSUNLOCKED_OFF */
-    FUN_132abec4(*(int *)(form + 0x474), 1);    /* exibe  FPSUNLOCKED_ON  */
+    vcl_set_visible(*(void **)(booster + 0x478), 0);    /* oculta FPSUNLOCKED_OFF */
+    vcl_set_visible(*(void **)(booster + 0x474), 1);    /* exibe  FPSUNLOCKED_ON  */
 
     /* INFERIDO: abre o dialogo de limite de FPS (classe nao identificada). */
-    (**(void (**)(void))(**(int **)PTR_DAT_13811880 + 0x1cc))();
+    {
+        void *f = *PTR_DAT_13811880;
+        (*(void (**)(void *))(*(uint8_t **)f + 0x1cc))(f);
+    }
 }
 
 /* FPSUNLOCKED_ONClick @ 0x13729524  -- desliga */
-void pb_desbloqueador_fps_restaurar(int form)
+void pb_desbloqueador_fps_restaurar(uint8_t *booster)
 {
-    int item;
-
-    FUN_132abec4(*(int *)(form + 0x474), 0);    /* oculta FPSUNLOCKED_ON  */
-    FUN_132abec4(*(int *)(form + 0x478), 1);    /* exibe  FPSUNLOCKED_OFF */
+    vcl_set_visible(*(void **)(booster + 0x474), 0);    /* oculta FPSUNLOCKED_ON  */
+    vcl_set_visible(*(void **)(booster + 0x478), 1);    /* exibe  FPSUNLOCKED_OFF */
 
     fps_desbloqueio_limpar_estado();            /* FUN_13728c00 */
     fps_desbloqueio_ocultar_rotulos();          /* FUN_13728cc4 */
 
-    item = FUN_135750f8(*(int *)(FUN_13575414(
-               *(int *)(*(int *)(form + 0x5f8) + 0x310), 0) + 0x24), 0);
-    FUN_13574f7c(item, L"DESBLOQUEIO DE FPS");  /* @ 0x13729580 */
+    /* Item [0][0] do ReetFPSSettingsPanel1 (booster+0x5f8 -> +0x310 -> +0x24). */
+    item_set_texto(lista_item(*(int *)(booster + 0x5f8)),
+                   L"DESBLOQUEIO DE FPS");      /* @ 0x13729580, FUN_13574f7c */
 }
 
-/* Auxiliares desta secao (assinaturas conferidas no decompilado).
- *
- * decodificar_string = FUN_134a8d98: (ctx, blob, tamanho, chaves..., &saida).
- *   EAX = *PTR_DAT_13811378, EDX = blob cifrado, ECX = tamanho; na pilha,
- *   na ordem de push: chave2, chave1, &saida.  Nao exibe nada: so devolve a
- *   string decodificada.  Por isso os textos destas telas nao aparecem em
- *   claro no binario.
- *
- * settings_gravar = FUN_1369b158 (store, chave, valor) e
- * settings_remover = FUN_1369ae6c (store, chave): ambos carregam o documento
- *   JSON guardado em PTR_DAT_13811610 (classe em PTR_LAB_133d2d08), procuram
- *   a chave (FUN_133e28dc), removem (FUN_133dd464) e/ou adicionam o par
- *   (FUN_133dd2e0) e serializam de volta.  store = *PTR_DAT_13811bac.
- *   INFERIDO: e o arquivo de configuracoes do ReetFPS; a gravacao em disco
- *   nao foi rastreada.
- */
-extern void decodificar_string(void *ctx, const void *blob, int tamanho, ...);
-extern void settings_gravar(void *store, DelphiStr chave, DelphiStr valor);
-extern void settings_remover(void *store, DelphiStr chave);
-extern void FUN_132db2e0(int controle, int valor);
-extern int  FUN_13575414(int lista, int indice);
-extern int  FUN_135750f8(int lista, int indice);
-extern void FUN_13574f7c(int item, const wchar_t *texto);
-extern void FUN_135fcd18(void);
-extern int *PTR_DAT_13811880;   /* form aberto pelo botao FPSUNLOCKED_OFF   */
-extern int *PTR_DAT_13811378;   /* contexto do decodificador de strings    */
-extern int *PTR_DAT_13811bac;   /* store de configuracoes (JSON)           */
-extern int  DAT_13819fac;       /* form com os rotulos de FPS (+0x514...)  */
+/* Nota: config_gravar = FUN_1369b158 (store, chave, valor) e config_remover
+ * = FUN_1369ae6c (store, chave) carregam o documento JSON guardado em
+ * PTR_DAT_13811610 (classe em PTR_LAB_133d2d08), procuram a chave
+ * (FUN_133e28dc), removem (FUN_133dd464) e/ou adicionam o par (FUN_133dd2e0)
+ * e serializam de volta.  store = *PTR_DAT_13811bac.  INFERIDO: e o arquivo
+ * de configuracoes do ReetFPS; a gravacao em disco nao foi rastreada.      */
 
 
 /* ===========================================================================
@@ -2931,7 +3115,7 @@ extern int  DAT_13819fac;       /* form com os rotulos de FPS (+0x514...)  */
  *       INFERIDO: e a flag que libera a elevacao de prioridade do processo
  *       do PB (secao 3-secao 6); o leitor da flag nao foi localizado.
  *    3. Grava um par chave/valor cifrado no store de configuracoes
- *       (chave DAT_1372ead8, valor DAT_1372eac0; settings_gravar).
+ *       (chave DAT_1372ead8, valor DAT_1372eac0; config_gravar).
  *    4. Se param_2 != 0: monta titulo/corpo cifrados (DAT_1372eb0c,
  *       DAT_1372eb58, DAT_1372eba4) e mostra o card via FUN_1358027c.
  *
@@ -2968,51 +3152,69 @@ extern int  DAT_13819fac;       /* form com os rotulos de FPS (+0x514...)  */
  *    nao foi localizado.
  */
 
-/* PRIORITYPB_OFFClick @ 0x1372e888  -- liga */
-void pb_impulsionar_pb_ativar(int form, int mostrar_card)
-{
-    DelphiStr valor = NULL, chave = NULL;
-    DelphiStr titulo = NULL, corpo = NULL;
+/* Auxiliares desta secao (os compartilhados estao no inicio do arquivo;
+ * str_concat_n no secao 19). */
+extern void FUN_132ac618(void *form);
+extern int  _DAT_138103f8;      /* flag do PRIORITYPB */
+extern void **PTR_DAT_138116e4, **PTR_DAT_138113d4, **PTR_DAT_13811170,
+            **PTR_DAT_13810ac4, **PTR_DAT_138117c4, **PTR_DAT_1381147c,
+            **PTR_DAT_13811244, **PTR_DAT_13810b8c, **PTR_DAT_138110a0,
+            **PTR_DAT_13810cf4, **PTR_DAT_13810aa8, **PTR_DAT_138119c8,
+            **PTR_DAT_13810aec, **PTR_DAT_13811cf8, **PTR_DAT_13811ad8,
+            **PTR_DAT_138114bc, **PTR_DAT_13811464, **PTR_DAT_1381112c,
+            **PTR_DAT_13810ea4, **PTR_DAT_13811d8c;
 
-    FUN_132abec4(*(int *)(form + 0x570), 0);    /* oculta PRIORITYPB_OFF */
-    FUN_132abec4(*(int *)(form + 0x56c), 1);    /* exibe  PRIORITYPB_ON  */
+/* PRIORITYPB_OFFClick @ 0x1372e888  -- liga (nao testa se o jogo esta aberto) */
+void pb_impulsionar_pb_ativar(uint8_t *booster, int mostrar_card)
+{
+    DelphiStr tmp = NULL, valor = NULL, chave = NULL;
+
+    vcl_set_visible(*(void **)(booster + 0x570), 0);    /* oculta PRIORITYPB_OFF */
+    vcl_set_visible(*(void **)(booster + 0x56c), 1);    /* exibe  PRIORITYPB_ON  */
 
     _DAT_138103f8 = -1;
 
-    /* chaves de decodificacao omitidas: o decompilado embaralha os pushes */
-    decodificar_string(*(void **)PTR_DAT_13811378, (void *)0x1372eac0, 0x16,
-                       /*chaves*/ &valor);
-    decodificar_string(*(void **)PTR_DAT_13811378, (void *)0x1372ead8, 0x99,
-                       /*chaves*/ &chave);
-    settings_gravar(*(void **)PTR_DAT_13811bac, chave, valor);  /* FUN_1369b158 */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372eac0, 0x16, &tmp, 0x2a, 0x8f);
+    str_converter(&valor, tmp);                               /* FUN_1314c690 */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372ead8, 0x99, &tmp, 0x57, 0xbb);
+    str_converter(&chave, tmp);
+    config_gravar(*PTR_DAT_13811bac, chave, valor);           /* FUN_1369b158 */
 
     if (mostrar_card) {
-        /* titulo, corpo e icone tambem sao strings cifradas
-         * (LAB_1372eaf4, DAT_1372eb0c, DAT_1372eb58, DAT_1372eba4).       */
+        DelphiStr icone = NULL, s1 = NULL, s2 = NULL, corpo = NULL, titulo = NULL;
+        /* Aqui ate o nome do icone (p10) e cifrado. */
+        decodificar_string(*PTR_DAT_13811378, (void *)0x1372eaf4, 0x30, &tmp, 0xae, 0xd);
+        str_converter(&icone, tmp);
+        decodificar_string(*PTR_DAT_13811378, (void *)0x1372eb0c, 0x11, &s1, 0xef, 0xa9);
+        decodificar_string(*PTR_DAT_13811378, (void *)0x1372eb58, 0xc3, &s2, 0xe3, 0xe8);
+        str_concat_n(&tmp, 3, s1, "\r\n", s2);  /* separador AnsiString @ 0x1372eb48 */
+        str_converter(&corpo, tmp);
+        decodificar_string(*PTR_DAT_13811378, (void *)0x1372eba4, 0xf4, &tmp, 0xb5, 0xa9);
+        str_converter(&titulo, tmp);
         FUN_1358027c(titulo, corpo, 0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
-                     /*icone*/ NULL, -1, -1, -1, 1, 1, 1);
+                     (const wchar_t *)icone, -1, -1, -1, 1, 1, 1);
     }
 }
 
 /* PRIORITYPB_ONClick @ 0x1372ebb0  -- desliga */
-void pb_impulsionar_pb_restaurar(int form)
+void pb_impulsionar_pb_restaurar(uint8_t *booster)
 {
-    DelphiStr chave = NULL;
+    DelphiStr tmp = NULL, chave = NULL;
 
-    FUN_132abec4(*(int *)(form + 0x570), 1);    /* exibe  PRIORITYPB_OFF */
-    FUN_132abec4(*(int *)(form + 0x56c), 0);    /* oculta PRIORITYPB_ON  */
+    vcl_set_visible(*(void **)(booster + 0x570), 1);    /* exibe  PRIORITYPB_OFF */
+    vcl_set_visible(*(void **)(booster + 0x56c), 0);    /* oculta PRIORITYPB_ON  */
 
     _DAT_138103f8 = 0;
 
-    decodificar_string(*(void **)PTR_DAT_13811378, (void *)0x1372ec5c, 0x36,
-                       /*chaves*/ &chave);
-    settings_remover(*(void **)PTR_DAT_13811bac, chave);       /* FUN_1369ae6c */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372ec5c, 0x36, &tmp, 0xd7, 2);
+    str_converter(&chave, tmp);
+    config_remover(*PTR_DAT_13811bac, chave);                 /* FUN_1369ae6c */
 }
 
 /* FUN_13727a5c @ 0x13727a5c  -- reset das configuracoes da tela */
 void pb_game_booster_resetar_config(void)
 {
-    /* 15x: decodificar_string(DAT_13727f88 .. DAT_13728178) + settings_remover */
+    /* 15x: decodificar_string(DAT_13727f88 .. DAT_13728178) + config_remover */
 
     *(int *)PTR_DAT_138116e4 = 3;  *(int *)PTR_DAT_138113d4 = 0;
     *(int *)PTR_DAT_13811170 = 0;  *(int *)PTR_DAT_13810ac4 = 3;
@@ -3026,27 +3228,11 @@ void pb_game_booster_resetar_config(void)
     *(int *)PTR_DAT_13810ea4 = 0;  *(int *)PTR_DAT_13811d8c = 3;
 
     FUN_132ac618(DAT_13819fac);                 /* vtable +0xe4 do form   */
-    (**(void (**)(void))(**(int **)(DAT_13819fac + 0x608) + 0xe0))();
+    {
+        void *painel = *(void **)(DAT_13819fac + 0x608);
+        (*(void (**)(void *))(*(uint8_t **)painel + 0xe0))(painel);
+    }
 }
-
-/* Auxiliares desta secao.
- *
- * FUN_1358027c @ 0x1358027c -- card de notificacao, 16 parametros:
- *   EAX = titulo, EDX = corpo, ECX = duracao em ms (0x1194 = 4500); na pilha
- *   p4..p8 = 5, 0xe, 0xc, 0xa0, 0x17c; p9 (byte) = 0xf5; p10 = icone
- *   (string, 0 = sem imagem); p11..p13 = int, -1 = padrao; p14..p16 = bytes.
- *   Conferido pela desmontagem de 0x13729680..0x13729705.
- */
-extern void FUN_1358027c(DelphiStr titulo, DelphiStr corpo, int duracao_ms,
-                         int p4, int p5, int p6, int p7, int p8,
-                         uint8_t p9, const wchar_t *icone,
-                         int p11, int p12, int p13,
-                         uint8_t p14, uint8_t p15, uint8_t p16);
-extern void FUN_132abec4(int controle, int visivel);  /* TControl.SetVisible */
-extern void FUN_132ac618(int form);
-extern int  _DAT_138103f8;      /* flag do PRIORITYPB */
-/* PTR_DAT_1381110c, PTR_DAT_13810cd8, PTR_DAT_13811928, PTR_DAT_138116e4 etc.
- * sao globais do binario (ponteiros para variaveis Delphi).                 */
 
 
 /* ===========================================================================
@@ -3061,44 +3247,34 @@ extern int  _DAT_138103f8;      /* flag do PRIORITYPB */
  *    "fullscreen"            @ 0x136ecf90  (nome do icone do item)
  *    "FULLSCREEN"            @ 0x136f7b2c  (literal comparado pelo despachante)
  *
- *  DESPACHANTE DE ITENS DO POINTBLANK  (codigo em 0x136f78d0, sem funcao
- *  criada no Ghidra)
- *    Compara o nome do item (FUN_1316c388) com cada literal e chama o
- *    metodo correspondente do formulario principal (*PTR_DAT_13810970)
- *    atraves de FUN_136f782c.  Se o formulario nao existe, levanta
- *    "Handler da otimizacao do PointBlank nao atribuido."; se o nome nao
- *    casa com nenhum literal, levanta uma excecao com a mensagem em
- *    0x136f7c4c.
+ *  DESPACHANTE: rotina @ 0x136f78d0 (tabela completa no secao 9).  "FULLSCREEN"
+ *  -> 0x1372dfb0, que e o metodo publicado TELACHEIA_OFFClick do
+ *  TGameBooster (card TELACHEIA = "tela cheia" da tela FPS Game Booster;
+ *  par TELACHEIA_ONClick @ 0x1372e304).  O form passado e
+ *  *(PTR_DAT_13810970); se for nulo o despachante levanta "GameBooster nao
+ *  esta criado." (@ 0x136f7a98); chave sem handler levanta "Otimizacao do
+ *  PointBlank sem mapeamento: %s" (@ 0x136f7c4c).
  *
- *      "FLUIDEZMAX" / "FLUIDEZMAXIMA"  -> 0x1372a03c
- *      "FULLSCREEN"                    -> 0x1372dfb0   (esta secao)
- *      "OPTIMIZER_PB_MANAGER"          -> 0x13729094
- *      "FPS_SELECTION_INDEX"           -> 0x137294d8
- *      "PRIORITYPB"                    -> 0x1372e888
- *      "LOADINGMAP"                    -> 0x13728d20
- *      "INTERFACE"                     -> 0x1372d4b8
- *      "REETGAMEMODE"                  -> 0x1372c00c
- *
- *  HANDLER: FUN_1372dfb0 @ 0x1372dfb0  (form, mostrar_card)
- *    1. FUN_13727540(form, 1, 3): seleciona linha 1, coluna 3 da grade
- *       de opcoes do formulario (form+0x5f8).
- *    2. FUN_1372e7bc(form, 0): desliga a opcao concorrente -- apaga a sua
+ *  HANDLER: TELACHEIA_OFFClick @ 0x1372dfb0  (EAX = Self, EDX = mostrar_card)
+ *    1. FUN_13727540(Self, 1, 3) com dois zeros na pilha: seleciona linha 1,
+ *       coluna 3 da grade de opcoes do form (Self+0x5f8).
+ *    2. FUN_1372e7bc(Self, 0): desliga a opcao concorrente -- apaga a sua
  *       chave de configuracao (FUN_1369ae6c), troca os botoes
- *       form+0x4f0 (exibe) / form+0x4ec (oculta) e chama
+ *       Self+0x4f0 (exibe) / Self+0x4ec (oculta) e chama
  *       vtable[0x188](*(mgr+0x514), 0).
  *    3. Se o jogo nao esta aberto (PTR_DAT_13810cd8 e PTR_DAT_13811928
  *       zerados): FUN_135fcd18() e sai.
- *    4. Senao: oculta form+0x4a0, exibe form+0x49c,
- *       vtable[0x188](*(mgr+0x49c), 1), grava a configuracao via
- *       FUN_1369b158(*PTR_DAT_13811bac, chave, valor) e, se mostrar_card,
- *       exibe o card com FUN_1358027c(..., 0x1194).
- *    mgr = *PTR_DAT_1381110c.  Chave, valor e textos do card sao strings
- *    ofuscadas, decodificadas em tempo de execucao por FUN_134a8d98
- *    (blobs DAT_1372e228, DAT_1372e240, DAT_1372e25c, DAT_1372e274,
- *    DAT_1372e2a8, DAT_1372e2f8); por isso nao estao citadas aqui.
+ *    4. Senao: oculta Self+0x4a0, exibe Self+0x49c,
+ *       vtable[0x188](*(mgr+0x49c), 1), grava no store JSON a CHAVE do blob
+ *       0x1372e240 com o VALOR do blob 0x1372e228 (FUN_1369b158) e, se
+ *       mostrar_card, exibe o card: icone = blob 0x1372e25c (cifrado),
+ *       corpo = blob 0x1372e274 + "\r\n" (@ 0x1372e298) + blob 0x1372e2a8,
+ *       titulo = blob 0x1372e2f8.
+ *    mgr = *PTR_DAT_1381110c.  Chave, valor e textos sao cifrados
+ *    (FUN_134a8d98); o texto em claro nao foi recuperado.
  *
  *  O QUE NAO FOI COMPROVADO
- *    Nenhum trecho do handler toca o TRPPBConfig (§19) nem a chave
+ *    Nenhum trecho do handler toca o TRPPBConfig (secao 19) nem a chave
  *    [Graphics] ScreenMode (+0x4f8) do env_settings.ini.  Se a tela cheia
  *    e aplicada gravando ScreenMode, isso acontece em outro ponto (por
  *    exemplo ao iniciar o jogo) que nao foi localizado.  O significado de
@@ -3106,50 +3282,53 @@ extern int  _DAT_138103f8;      /* flag do PRIORITYPB */
  *    identificado (pode ser apenas um setter de controle da UI).
  */
 
-extern void form_grade_selecionar(void *form, int linha, int coluna); /* FUN_13727540 */
+extern void form_grade_selecionar(void *form, int linha, int coluna,
+                                  int p4, int p5);                    /* FUN_13727540 */
 extern void form_desligar_opcao_concorrente(void *form, int card);    /* FUN_1372e7bc */
-extern void jogo_nao_encontrado(void);                                /* FUN_135fcd18 */
-extern void ui_set_visivel(void *controle, int visivel);              /* FUN_132abec4 */
-extern void config_gravar(void *settings, DelphiStr chave, DelphiStr valor); /* FUN_1369b158 */
-extern int *PTR_DAT_1381110c;   /* mgr */
-extern int *PTR_DAT_13810cd8;   /* jogo em execucao (1a verificacao) */
-extern int *PTR_DAT_13811928;   /* jogo em execucao (2a verificacao) */
-extern int *PTR_DAT_13811bac;   /* objeto de configuracoes do ReetFPS */
 
 /*
- * pb_fullscreen_ativar  --  FUN_1372dfb0 @ 0x1372dfb0
+ * pb_fullscreen_ativar  --  TELACHEIA_OFFClick @ 0x1372dfb0
  */
-void pb_fullscreen_ativar(uint8_t *form, int mostrar_card)
+void pb_fullscreen_ativar(uint8_t *booster, int mostrar_card)
 {
-    form_grade_selecionar(form, 1, 3);
-    form_desligar_opcao_concorrente(form, 0);
+    DelphiStr tmp = NULL, chave = NULL, valor = NULL;
 
-    if (*PTR_DAT_13810cd8 == 0 && *PTR_DAT_13811928 == 0) {
-        jogo_nao_encontrado();
+    form_grade_selecionar(booster, 1, 3, 0, 0);               /* PUSH 0; PUSH 0 */
+    form_desligar_opcao_concorrente(booster, 0);
+
+    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
+        jogo_nao_encontrado();                                /* FUN_135fcd18 */
         return;
     }
 
-    ui_set_visivel(*(void **)(form + 0x4a0), 0);
-    ui_set_visivel(*(void **)(form + 0x49c), 1);
+    vcl_set_visible(*(void **)(booster + 0x4a0), 0);
+    vcl_set_visible(*(void **)(booster + 0x49c), 1);
 
-    {
-        int *obj = *(int **)(*PTR_DAT_1381110c + 0x49c);
-        ((void (*)(int *, int))(*(int **)obj)[0x188 / 4])(obj, 1);
-    }
+    controle_vt188(*(void **)((uint8_t *)*PTR_DAT_1381110c + 0x49c), 1);
 
-    /* chave/valor ofuscados (DAT_1372e228 / DAT_1372e240) */
-    config_gravar((void *)*PTR_DAT_13811bac, /*chave*/ NULL, /*valor*/ NULL);
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372e228, 0xb8, &tmp, 0x15, 5);
+    str_converter(&valor, tmp);                               /* FUN_1314c690 */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372e240, 0xbd, &tmp, 0x49, 0x2c);
+    str_converter(&chave, tmp);
+    config_gravar(*PTR_DAT_13811bac, chave, valor);           /* FUN_1369b158 */
 
     if (mostrar_card) {
-        /* titulo e corpo ofuscados (DAT_1372e25c .. DAT_1372e2f8) */
-        FUN_1358027c(/*titulo*/ NULL, /*corpo*/ NULL, 0x1194);
+        DelphiStr icone = NULL, s1 = NULL, s2 = NULL, corpo = NULL, titulo = NULL;
+        decodificar_string(*PTR_DAT_13811378, (void *)0x1372e25c, 0xd7, &tmp, 0xe8, 0x7c);
+        str_converter(&icone, tmp);
+        decodificar_string(*PTR_DAT_13811378, (void *)0x1372e274, 0xd0,  &s1, 0x9f, 0x9d);
+        decodificar_string(*PTR_DAT_13811378, (void *)0x1372e2a8, 0x122, &s2, 0xb9, 0xb9);
+        str_concat_n(&tmp, 3, s1, "\r\n", s2);                /* "\r\n" @ 0x1372e298 */
+        str_converter(&corpo, tmp);
+        decodificar_string(*PTR_DAT_13811378, (void *)0x1372e2f8, 0x110, &tmp, 0x72, 0x112);
+        str_converter(&titulo, tmp);
+        FUN_1358027c(titulo, corpo, 0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+                     (const wchar_t *)icone, -1, -1, -1, 1, 1, 1);
     }
 }
 
-/* Nao ha pb_fullscreen_restaurar(): o caminho de desligar FULLSCREEN nao
- * foi localizado.  O padrao de FUN_1372e7bc (desligar opcao, apagar chave,
- * vtable[0x188](..., 0)) sugere uma funcao irma, mas ela nao foi
- * identificada.                                                             */
+/* O desfazer e TELACHEIA_ONClick @ 0x1372e304 (nome confirmado na tabela
+ * de metodos publicados; corpo nao reconstruido).                           */
 
 
 /* ===========================================================================
@@ -3247,8 +3426,7 @@ void pb_fullscreen_ativar(uint8_t *form, int mostrar_card)
  *  mensagem de restauracao do proprio painel.
  */
 
-/* Despachante generico (open array Delphi: array + indice maximo).          */
-extern void FUN_135d1fb8(const wchar_t **cmds, int high);
+/* Despachante: executar_lote = FUN_135d1fb8 (AUXILIARES COMPARTILHADOS).   */
 
 /* Tabela ATIVAR -- ordem e texto exatos do bloco @ 0x135f7f88.              */
 static const wchar_t *gpu_cmds_ativar[] = {
@@ -3324,13 +3502,13 @@ static const wchar_t *gpu_cmds_restaurar[] = {
  * EDX = 9 (indice maximo => 10 comandos).                                   */
 void gpu_otimizacao_ativar(void)
 {
-    FUN_135d1fb8(gpu_cmds_ativar, GPU_QTD(gpu_cmds_ativar) - 1);
+    executar_lote(gpu_cmds_ativar, GPU_QTD(gpu_cmds_ativar) - 1);
 }
 
 /* Bloco @ 0x135f8a60: mesmo formato, EDX = 9.                               */
 void gpu_otimizacao_restaurar(void)
 {
-    FUN_135d1fb8(gpu_cmds_restaurar, GPU_QTD(gpu_cmds_restaurar) - 1);
+    executar_lote(gpu_cmds_restaurar, GPU_QTD(gpu_cmds_restaurar) - 1);
 }
 
 /*
