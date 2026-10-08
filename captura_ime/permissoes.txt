@@ -1,0 +1,15 @@
+2026-10-07 09:38:53  PointBlank PIDs: 20388, 22372
+
+===== handles de PROCESSO (alvo e permissoes) =====
+0x000039B8  PointBlank.exe(20388)
+      => SYNCHRONIZE|QUERY_LIMITED_INFORMATION
+0x00003AA4  PointBlank.exe(20388)
+      => QUERY_LIMITED_INFORMATION
+0x00003ADC  PointBlank.exe(20388)
+      => SYNCHRONIZE|SET_INFORMATION|QUERY_LIMITED_INFORMATION
+
+===== handles de THREAD para o jogo, agrupados por permissao =====
+ 1776 handles  => READ_CONTROL|DELETE|SYNCHRONIZE|WRITE_DAC|WRITE_OWNER|THREAD_ALL_ACCESS
+
+===== handles de THREAD do proprio ReetFPS, agrupados por permissao =====
+   45 handles  => READ_CONTROL|DELETE|SYNCHRONIZE|WRITE_DAC|WRITE_OWNER|THREAD_ALL_ACCESS

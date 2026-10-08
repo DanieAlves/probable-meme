@@ -3,7 +3,7 @@
  * ----------------------------------------------------------------------------
  *  Reconstrucao em C anotada das rotinas do ReetFPS ligadas ao Point Blank
  *  e das funcionalidades anunciadas na tela do programa. Complementa
- *  reetfps.c (otimizador do Windows) e o resumo em ponto_blank.md.
+ *  reetfps.c (login + otimizador do Windows) e o resumo em ponto_blank.md.
  *
  *  O QUE ESTA AQUI (numero da secao -- funcao principal -- o que e comprovado)
  *     1  pb_encontrar_instalacao()        caminhos fixos + drives C..Z ate achar o PB
@@ -39,6 +39,14 @@
  *    22  pb_fullscreen_ativar()           card TELACHEIA (FULLSCREEN=ACTIVE; dica F6)
  *    23  gpu_otimizacao_*()               10 reg add de GPU/GameDVR/rede + perfil NVIDIA
  *    24  (so comentario)                  cadeia ReetFPS.exe -> ReetFPS.dll -> window.ime
+ *                                         ATENCAO: descreve a versao ANTIGA (DLL do
+ *                                         disco).  O modulo que roda no jogo foi
+ *                                         depois capturado da memoria e analisado --
+ *                                         ver ponto_blank.md 2.25 a 2.27 e a nota no
+ *                                         inicio da secao 24.
+ *    25  pb_fonte_personalizada_*()      FONTE_PERSONALIZADA: grava 4 chaves no JSON;
+ *                                        pre-lancamento escreve Locale\Brazil\Font.ini
+ *                                        (observado: "bahnschrift"; handler nao desmontado)
  *
  *  PADRAO DOS CARDS DA TELA "FPS GAME BOOSTER" (secoes 14, 16-22)
  *    Cada card tem botoes *_OFF/*_ON publicados no form TGameBooster.  O
@@ -51,12 +59,19 @@
  *    SINCRONIZADO com o servidor (setConfig=...&content=<json> para
  *    https://reetfps.com/update/server.php, FUN_1354db34; ver secao 24).
  *    Nenhum desses handlers executa comandos nem escreve no processo do
- *    jogo: o efeito real fica no modulo window.ime, carregado DENTRO do
- *    Point Blank e AUSENTE do disco (secao 24).
+ *    jogo: o efeito real fica num modulo carregado DENTRO do Point Blank.
+ *    Na versao analisada estaticamente esse modulo era o window.ime
+ *    (secao 24).  Na versao observada ao vivo ele e mapeado direto na
+ *    memoria do jogo, e JA FOI capturado e analisado: as chaves que ele le
+ *    e como cada feature chega ao jogo estao em ponto_blank.md 2.26 e 2.27.
  *
  *  CONVENCOES
  *    - Enderecos sao do binario (image base 0x13140000); os da DLL sao
  *      citados como "ReetFPS.dll @0x1000xxxx" (image base 0x10000000).
+ *    - CUIDADO com um terceiro espaco de enderecos: a analise do modulo
+ *      injetado (ponto_blank.md 2.26/2.27) usa base 0x201D0000, porque foi
+ *      assim que o bloco veio da memoria do jogo.  Os FUN_202xxxxx de lado
+ *      nenhum se confundem com os 0x13xxxxxx deste arquivo.
  *    - "INFERIDO:" marca o que nao foi comprovado no Ghidra.
  *    - Strings ofuscadas (FUN_134a8d98) aparecem pelo texto decifrado e
  *      pelo endereco do blob; a cifra e a validacao estao em
@@ -66,6 +81,10 @@
  *    - Codigo de injecao.  O carregador PE em memoria (0x136e5000-0x136e7400,
  *      OpenProcess/WriteProcessMemory/CreateRemoteThread) e a injecao por IME
  *      da ReetFPS.dll sao DESCRITOS na secao 24, sem reconstrucao em C.
+ *    - O modulo injetado.  Ele foi capturado da memoria do jogo e analisado
+ *      (ponto_blank.md 2.26/2.27: IPC por janela, 35 chaves, patch direto,
+ *      detour inline e breakpoint de hardware), mas nada disso tem
+ *      reconstrucao em C neste projeto -- so a descricao nos .md.
  *
  *  COMO LER
  *    Cada funcao tem um comentario com o endereco original para voce abrir
@@ -200,15 +219,25 @@ extern void vcl_set_text(void *controle, DelphiStr texto);  /* FUN_132ac010 = Se
 extern void config_gravar(void *store, DelphiStr chave, DelphiStr valor); /* FUN_1369b158 */
 extern void config_remover(void *store, DelphiStr chave);                 /* FUN_1369ae6c */
 
-/* NOTA: as validacoes de plano/licenca foram RETIRADAS desta reconstrucao
- * (projeto em homologacao, caminho para open source). O aviso "plano Basic"
- * (FUN_135fcd18) e as flags de acesso PTR_DAT_13810cd8 / PTR_DAT_13811928 nao
- * sao mais usados: todas as features do painel rodam sem checagem de licenca. */
+/* Aviso de plano -- FUN_135fcd18 @ 0x135fcd18 (0x135fcd18..0x135fcda6).
+ * Atualiza o acesso da licenca (FUN_1354ea18, que consulta
+ * https://reetfps.com/acess/user.php?) e, se *PTR_DAT_13810cd8 == 0, abre
+ * o dialogo (FUN_13552fac) com o texto decifrado do blob 0x135fcdc0:
+ * "O plano Basic nao oferece suporte para esse servico especifico. Para
+ *  aproveitar esse recurso, e necessario adquirir o plano Advanced."
+ * Versoes anteriores deste arquivo chamavam esta funcao de "jogo nao
+ * encontrado" -- errado.                                                  */
+extern void aviso_plano_basic(void);
 
 /* Globais compartilhadas (cada uma guarda um ponteiro para a variavel real). */
 extern void **PTR_DAT_13811378;  /* contexto do decodificador de strings          */
 extern void **PTR_DAT_13811bac;  /* store de configuracoes (JSON)                 */
 extern void **PTR_DAT_1381110c;  /* form com os controles de overlay (+0x500..)   */
+extern void **PTR_DAT_13810cd8;  /* != 0: plano com acesso (== 0 -> aviso "plano Basic",
+                                    ver aviso_plano_basic); NAO e "jogo em execucao" */
+extern void **PTR_DAT_13811928;  /* segunda flag de acesso, lida so pelos handlers do
+                                    painel, sempre em OR com a anterior (INFERIDO:
+                                    outra forma de licenca liberada)               */
 extern void **PTR_DAT_13811568;  /* objeto de estado usado por secao 15/secao 16            */
 
 
@@ -1950,8 +1979,14 @@ void crosshair_configurar_parametros(TRPCrosshair *m, int comprimento,
  *    a regra "a ultima tecla de um par oposto vence" (SOCD).  Nenhum codigo
  *    do ReetFPS.exe ligado a chave KEYBOARD intercepta o teclado (os
  *    handlers so gravam/removem a chave): INFERIDO que o comportamento seja
- *    aplicado dentro do jogo pelo modulo window.ime (secao 24), que nao esta
- *    no disco -- o efeito real NAO e verificavel estaticamente.
+ *    aplicado dentro do jogo pelo modulo injetado.
+ *    >>> AINDA SEM ATRIBUICAO depois da analise do modulo (ponto_blank.md
+ *    2.27): NAO existe chave KEYBOARD entre as 35 que o modulo le.  O que
+ *    existe de compativel e o par SetWindowLongA + CallWindowProcA, ou seja
+ *    subclassing da janela do jogo (hook de WndProc, 2.26) -- o caminho
+ *    esperado para atalhos com o jogo em foco, e coerente com a observacao
+ *    de que o SOCD nao funciona fora do jogo (2.25).  Mas a ligacao entre
+ *    esse hook e o SOCD nao foi provada.
  *
  *  O QUE NAO FAZ PARTE DESTE MODULO
  *    - MouseKeys: "reg add ...\Accessibility\MouseKeys /v Flags /d 0"
@@ -2252,7 +2287,8 @@ static const wchar_t *const k_mmcss_low_latency[] = {
  *  otimizada" @ 0x136ed2c8, icone "window") e despachado por 0x136f78d0
  *  para o metodo publicado INTERFACEDELAY_OFFClick @ 0x1372d4b8 (par
  *  INTERFACEDELAY_ONClick @ 0x1372d948).  O que 0x1372d4b8 faz:
- *    - (gate de plano/licenca removido -- ver NOTA no topo);
+ *    - se nenhuma flag de plano (PTR_DAT_13810cd8/13811928) esta ligada ->
+ *      aviso "plano Basic" (FUN_135fcd18) e sai;
  *    - exibe o controle +0x5dc;
  *    - grava no store JSON INTERFACE = "ACTIVE" (chamadas @ 0x1372d519 /
  *      0x1372d549; blobs 0x1372d7f8 / 0x1372d810) e SET_INTERFACE = "ACTIVE"
@@ -2268,8 +2304,12 @@ static const wchar_t *const k_mmcss_low_latency[] = {
  *  O desligar (0x1372d948) remove INTERFACE, SET_INTERFACE e SET_INTERFACE2
  *  (chamadas @ 0x1372d990 / 0x1372d9c8 / 0x1372da06).
  *  Ou seja: a feature promete acelerar o LOBBY do jogo, nao o Windows.
- *  Nenhum comando de shell e executado; INFERIDO que o efeito seja aplicado
- *  dentro do jogo pelo modulo window.ime (secao 24), ausente do disco.
+ *  Nenhum comando de shell e executado.  >>> RESOLVIDO em ponto_blank.md
+ *  2.27: o modulo injetado tem a chave INTERFACE e escreve um FLOAT no jogo
+ *  em <base> + 0x212153 -- 999.0 quando ligada e 1.175494351E-38 (o FLT_MIN)
+ *  quando desligada.  Trocar um limite por FLT_MIN e o padrao de "remover o
+ *  teto" em codigo que compara tempo de frame.  NAO VERIFICADO: o
+ *  significado do campo, logo qual dos dois estados e o "sem delay".
  *
  *  B) O TOGGLE DE TRANSPARENCIA DO WINDOWS (tela de otimizacoes do Windows)
  *  Um par de handlers de botao (liga/desliga) que executam cada um um bloco
@@ -2469,8 +2509,8 @@ void pb_interface_transparencia_religar(uint8_t *painel)
  *  de FUN_136ec13c (ver secao 9/secao 18). O despachante FUN_136f78d0 liga essa chave
  *  a 0x137294d8 = FPSUNLOCKED_OFFClick do TGameBooster (secao 20), que troca os
  *  botoes +0x478/+0x474 do form e chama vtable+0x1cc do objeto em
- *  PTR_DAT_13811880 (INFERIDO: exibe este formulario). (No binario original
- *  havia aqui um gate de plano/licenca, removido -- ver NOTA no topo.)
+ *  PTR_DAT_13811880 (INFERIDO: exibe este formulario). Sem plano liberado
+ *  chama FUN_135fcd18 (aviso "plano Basic").
  *
  *  LEITURA NO INICIO: FUN_13693750 @ 0x13693750 le "FPS_SELECTION_INDEX"
  *  (@ 0x136937e8) do JSON (FUN_1369b8f4), faz Trim (FUN_1316c638) e
@@ -2491,8 +2531,12 @@ void pb_interface_transparencia_religar(uint8_t *painel)
  *    encontrado.  INFERIDO: restos de uma versao anterior, substituidos por
  *    FPS_SELECTION_INDEX.
  *
- *  ONDE O FPS CHEGA AO JOGO: NAO LOCALIZADO no ReetFPS.exe (INFERIDO: no
- *  modulo window.ime, ausente do disco -- secao 24). O TRPPBConfig (secao 19) grava a
+ *  ONDE O FPS CHEGA AO JOGO: NAO LOCALIZADO no ReetFPS.exe -- e certo, nao e
+ *  o exe que aplica.  >>> RESOLVIDO em ponto_blank.md 2.27: o modulo injetado
+ *  tem a chave FPS_SELECTION_INDEX, le o indice do painel por mensagem de
+ *  janela e escreve um dword no jogo em <base> + 0x500141.  A tabela de
+ *  valores da 9999 para qualquer indice de 1 a 6, e 360 (0x168) quando o
+ *  indice esta fora da faixa.  O TRPPBConfig (secao 19) grava a
  *  secao [Graphics] ("Graphics" @ 0x1358595c) de
  *  <pasta do jogo>\EnvSet\env_settings.ini (@ 0x13584570) em FUN_13585130;
  *  ali FPSType vem do campo +0x51c (chave @ 0x13585acc) e FPSVal do campo
@@ -2545,17 +2589,19 @@ int fps_clamp_preset(int index)
 }
 
 /*
- * fps_ao_aplicar  --  FUN_13693d44 @ 0x13693d44
+ * fps_ao_aplicar_com_acesso  --  FUN_13693d44 @ 0x13693d44
  *
- * No binario original so agia se uma das flags de plano estivesse ligada; com
- * as validacoes de licenca retiradas (ver NOTA no topo), age sempre.
+ * So age se uma das flags de plano estiver ligada (ver aviso_plano_basic;
+ * versoes anteriores diziam "jogo aberto" -- errado).
  */
-void fps_ao_aplicar(void)
+void fps_ao_aplicar_com_acesso(void)
 {
-    DAT_1380f724 = 1;
-    /* Consulta a chave L"FPS" (DAT_13693d80) no JSON de configuracoes;
-     * o valor lido e descartado nesta funcao.                            */
-    config_ler(*(void **)PTR_DAT_13811bac, L"FPS");      /* FUN_1369b87c */
+    if (*(int *)PTR_DAT_13810cd8 != 0 || *(int *)PTR_DAT_13811928 != 0) {
+        DAT_1380f724 = 1;
+        /* Consulta a chave L"FPS" (DAT_13693d80) no JSON de configuracoes;
+         * o valor lido e descartado nesta funcao.                            */
+        config_ler(*(void **)PTR_DAT_13811bac, L"FPS");      /* FUN_1369b87c */
+    }
 }
 
 /*
@@ -2647,7 +2693,7 @@ void pb_fps_definir_preset(int index)
 {
     int idx = fps_clamp_preset(index);
 
-    fps_ao_aplicar();
+    fps_ao_aplicar_com_acesso();
 
     if (*(int *)PTR_DAT_1381110c != 0 &&
         *(int *)(*(int *)PTR_DAT_1381110c + 0x4fc) != 0)
@@ -2708,7 +2754,8 @@ void pb_fps_definir_preset(int index)
  *  criado." @ 0x136f7a98.  Chave desconhecida gera excecao (@ 0x136f7c4c).
  *
  *  HANDLER: MAPLOADING_OFFClick @ 0x13728d20 (desmontado)
- *    - (gate de plano/licenca removido -- ver NOTA no topo);
+ *    - sem plano liberado (PTR_DAT_13810cd8/13811928) -> FUN_135fcd18
+ *      (aviso "plano Basic") e sai;
  *    - oculta +0x4e0, exibe +0x4dc;
  *    - vtable[0x188](*(*PTR_DAT_1381110c + 0x4b0), 1);
  *    - grava no store JSON LOADINGMAP = "ACTIVE" -- FUN_1369b158; chave do
@@ -2723,8 +2770,12 @@ void pb_fps_definir_preset(int index)
  *  O QUE NAO FOI COMPROVADO
  *    O card promete "carregamento instantaneo" dos mapas, mas nada no
  *    ReetFPS.exe ligado a LOADINGMAP mexe no disco, no jogo ou no sistema.
- *    INFERIDO: o efeito (se houver) e aplicado dentro do jogo pelo modulo
- *    window.ime (secao 24), ausente do disco -- nao verificavel.
+ *    >>> RESOLVIDO em ponto_blank.md 2.27: o modulo injetado tem a chave
+ *    LOADINGMAP e, quando ligada, escreve UMA VEZ um valor de 16 bits
+ *    0xC98B no jogo.  Em little-endian sao os bytes 8B C9, que e a
+ *    instrucao MOV ECX,ECX -- um no-op de 2 bytes.  Ou seja: o patch ANULA
+ *    uma instrucao de 2 bytes no caminho de carregamento de mapa.  E
+ *    one-shot (ha um global de "ja aplicado").
  *    Que comandos o sistema executa quando o objeto em +0x4b0 recebe
  *    vtable+0x188(1). A versao anterior desta secao ligava LOADINGMAP aos
  *    caches do LanmanWorkstation (0x135d50b4 / 0x135d51ec / 0x135d5328) e
@@ -2754,7 +2805,10 @@ void pb_loadingmap_ativar(uint8_t *booster, int mostrar_card)
 {
     DelphiStr tmp = NULL, chave = NULL, valor = NULL;
 
-    /* Gate de plano/licenca removido (ver NOTA no topo). */
+    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
+        aviso_plano_basic();                                /* FUN_135fcd18 */
+        return;
+    }
 
     vcl_set_visible(*(void **)(booster + 0x4e0), 0);
     vcl_set_visible(*(void **)(booster + 0x4dc), 1);
@@ -2803,7 +2857,8 @@ void pb_loadingmap_ativar(uint8_t *booster, int mostrar_card)
  *  cair no botao MINIMAP nao e conhecido.
  *
  *  O QUE MINIMAP_OFFClick FAZ (desmontado, sem funcao no Ghidra):
- *    1. (gate de plano/licenca removido -- ver NOTA no topo.)
+ *    1. Se as flags de plano (PTR_DAT_13810cd8 e PTR_DAT_13811928) estao
+ *       zeradas chama FUN_135fcd18 (aviso "plano Basic") e sai.
  *    2. Grava no store JSON (FUN_1369b158) MINIMAP = "ACTIVE" (chave do
  *       blob 0x137292f0, chamada @ 0x13729116; valor do blob 0x137292d8,
  *       chamada @ 0x137290e9).
@@ -2827,9 +2882,11 @@ void pb_loadingmap_ativar(uint8_t *booster, int mostrar_card)
  *
  *  O QUE NAO FOI COMPROVADO
  *    - Nenhum dos dois handlers escreve no jogo nem no env_settings.ini.
- *      INFERIDO: o minimapa e escondido dentro do jogo pelo modulo
- *      window.ime (secao 24), que nao esta no disco -- o efeito real nao e
- *      verificavel estaticamente.
+ *      >>> RESOLVIDO em ponto_blank.md 2.27: o modulo injetado tem a chave
+ *      REMOVE_MINIMAP e escreve UMA VEZ o byte 4 no jogo, em
+ *      <base> + 0x59134.  Espera ~1 s (GetTickCount64) antes de aplicar e
+ *      tem global de "ja aplicado".  Note que a chave do modulo se chama
+ *      REMOVE_MINIMAP, nao MINIMAP como no JSON do painel.
  *    - O nome de icone "map-off" @ 0x13441d9c existe numa tabela de icones
  *      (nome -> SVG); a ligacao com este card nao foi verificada.
  *
@@ -2977,7 +3034,10 @@ void pb_minimap_off_ativar(uint8_t *booster, int mostrar_card)
 {
     DelphiStr tmp = NULL, chave = NULL, valor = NULL;
 
-    /* Gate de plano/licenca removido (ver NOTA no topo). */
+    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
+        aviso_plano_basic();                                /* FUN_135fcd18 */
+        return;
+    }
 
     decodificar_string(*PTR_DAT_13811378, (void *)0x137292d8, 0xb8, &tmp, 0x15, 5);
     str_converter(&valor, tmp);                               /* FUN_1314c690 */
@@ -3046,7 +3106,9 @@ void pb_minimap_off_desfazer(uint8_t *booster)
  *    Clicar em "_ON" DESLIGA.
  *
  *  LIGAR  (FPSUNLOCKED_OFFClick @ 0x137294d8)
- *    1. (gate de plano/licenca removido -- ver NOTA no topo.)
+ *    1. Pre-condicao: *PTR_DAT_13810cd8 != 0 ou *PTR_DAT_13811928 != 0
+ *       (flags de plano); senao chama FUN_135fcd18 (aviso "plano Basic",
+ *       blob DAT_135fcdc0) e sai.
  *    2. Oculta FPSUNLOCKED_OFF e exibe FPSUNLOCKED_ON (FUN_132abec4 =
  *       TControl.SetVisible: grava +0x69 e envia CM_VISIBLECHANGED 0xB00B).
  *    3. Chama o metodo virtual +0x1cc do formulario em *PTR_DAT_13811880.
@@ -3081,8 +3143,8 @@ void pb_minimap_off_desfazer(uint8_t *booster)
  *    escreve no processo do Point Blank.
  */
 
-/* Auxiliares desta secao.  decodificar_string, config_remover e
- * vcl_set_visible: AUXILIARES COMPARTILHADOS.
+/* Auxiliares desta secao.  decodificar_string, config_remover,
+ * vcl_set_visible e aviso_plano_basic: AUXILIARES COMPARTILHADOS.
  * trackbar_set_posicao (FUN_132db2e0), lista_item e item_set_texto
  * (FUN_13575414/FUN_135750f8, FUN_13574f7c): declarados no secao 17.            */
 extern void **PTR_DAT_13811880;   /* form aberto pelo botao FPSUNLOCKED_OFF   */
@@ -3116,7 +3178,10 @@ static void fps_desbloqueio_ocultar_rotulos(void)
 /* FPSUNLOCKED_OFFClick @ 0x137294d8  -- liga */
 void pb_desbloqueador_fps_ativar(uint8_t *booster)
 {
-    /* Gate de plano/licenca removido (ver NOTA no topo). */
+    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
+        aviso_plano_basic();              /* FUN_135fcd18 ("plano Basic", DAT_135fcdc0) */
+        return;
+    }
 
     vcl_set_visible(*(void **)(booster + 0x478), 0);    /* oculta FPSUNLOCKED_OFF */
     vcl_set_visible(*(void **)(booster + 0x474), 1);    /* exibe  FPSUNLOCKED_ON  */
@@ -3354,8 +3419,9 @@ void pb_resetar_miras(void)
  *       entre o jogo e outros aplicativos, desfrutar de maior estabilidade e
  *       realizar multitarefas sem interrupcoes."  -- tela cheia e borderless
  *       sao mutuamente exclusivos.
- *    3. (gate de plano/licenca removido -- ver NOTA no topo.)
- *    4. Oculta Self+0x4a0, exibe Self+0x49c,
+ *    3. Sem plano liberado (PTR_DAT_13810cd8 e PTR_DAT_13811928 zerados):
+ *       FUN_135fcd18() (aviso "plano Basic") e sai.
+ *    4. Senao: oculta Self+0x4a0, exibe Self+0x49c,
  *       vtable[0x188](*(mgr+0x49c), 1), grava no store JSON
  *       FULLSCREEN = "ACTIVE" (chave blob 0x1372e240, chamada @ 0x1372e080;
  *       valor blob 0x1372e228, chamada @ 0x1372e053) e, se mostrar_card,
@@ -3371,7 +3437,13 @@ void pb_resetar_miras(void)
  *  O QUE A STRING DO F6 PERMITE AFIRMAR
  *    O proprio card diz ao usuario para usar a tecla F6 DENTRO do Point
  *    Blank para alternar tela cheia/janela.  INFERIDO: o F6 e um atalho
- *    tratado dentro do jogo pelo modulo injetado window.ime (secao 24).  O
+ *    tratado dentro do jogo pelo modulo injetado.
+ *    >>> PARCIAL depois da analise do modulo (ponto_blank.md 2.27): o modulo
+ *    tem as chaves BORDER_LESS, RESOLUTION e OTIMIZED_RESOLUTION_X/Y, lidas
+ *    por FUN_20225cd0, que e um dos dois chamadores de SetWindowLongA --
+ *    isto e, o caminho de estilo/tamanho de janela existe no modulo.  O F6
+ *    como tecla, porem, continua SEM ATRIBUICAO: nenhuma chave do modulo
+ *    corresponde a ele e o hook de WndProc nao foi ligado a esta feature.  O
  *    ReetFPS.exe nao importa RegisterHotKey e nenhuma ligacao entre F6 e
  *    ScreenMode foi encontrada nele (SetWindowsHookEx/GetAsyncKeyState
  *    existem no binario, mas nao foram ligados a este card).
@@ -3397,7 +3469,10 @@ void pb_fullscreen_ativar(uint8_t *booster, int mostrar_card)
     form_grade_selecionar(booster, 1, 3, 0, 0);               /* PUSH 0; PUSH 0 */
     form_desligar_opcao_concorrente(booster, 0);
 
-    /* Gate de plano/licenca removido (ver NOTA no topo). */
+    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
+        aviso_plano_basic();                                /* FUN_135fcd18 */
+        return;
+    }
 
     vcl_set_visible(*(void **)(booster + 0x4a0), 0);
     vcl_set_visible(*(void **)(booster + 0x49c), 1);
@@ -3659,21 +3734,177 @@ void gpu_nvidiaboost_aplicar(void)
 
 
 /* ===========================================================================
+ *  25) FONTE PERSONALIZADA  (FONTE_PERSONALIZADA + _INDEX + _VALUE + _INITIALIZED)
+ * ===========================================================================
+ *
+ *  Altera a fonte da interface do Point Blank (arquivo Font.ini do jogo) de
+ *  acordo com a selecao do usuario no painel.
+ *
+ *  FONTES DE CONHECIMENTO
+ *    - strings_decifradas.md: 4 blobs de nomes de chave, 1 blob na restauracao
+ *    - observacao ao vivo (2.24): Font.ini gravado com "bahnschrift" as 07:46
+ *      (entre abertura do ReetFPS e abertura do jogo)
+ *    - padrao dos outros handlers documentados neste arquivo
+ *    O codigo de 0x1372adxx nao foi desmontado no Ghidra; inferencias estao
+ *    marcadas como INFERIDO.
+ *
+ *  CHAVES DO STORE JSON  (4 blobs de nomes de chave, decodificados)
+ *    FONTE_PERSONALIZADA           0x1372ade9  (blob)  ->  0x1372af60  (decoded)
+ *    FONTE_PERSONALIZADA_INDEX     0x1372ae24          ->  0x1372af84
+ *    FONTE_PERSONALIZADA_VALUE     0x1372ae5f          ->  0x1372afac
+ *    FONTE_PERSONALIZADA_INITIALIZED 0x1372ae9a        ->  0x1372afd4
+ *
+ *  FUNCAO DE RESTAURACAO DO PAINEL
+ *    FUN_1369beb0 (ver secao 19) le a chave FONTE_PERSONALIZADA @ 0x1369c999.
+ *    A posicao na lista de restauracao (apos COUNTERPING, antes de PRIORITYPB)
+ *    confirma que e uma das features do card principal do TGameBooster.
+ *
+ *  O QUE O HANDLER FAZ (INFERIDO a partir dos blobs e da observacao ao vivo)
+ *
+ *  A) O botao de ativacao (proximo a 0x1372adxx, nome RTTI nao localizado):
+ *    1. Sem plano liberado -> aviso_plano_basic() e sai.  (INFERIDO: padrao
+ *       de todos os cards deste painel.)
+ *    2. Grava no store JSON:
+ *         FONTE_PERSONALIZADA       = "ACTIVE"   (chave blob 0x1372ade9)
+ *         FONTE_PERSONALIZADA_INDEX = <indice>   (chave blob 0x1372ae24)
+ *         FONTE_PERSONALIZADA_VALUE = <nome>     (chave blob 0x1372ae5f; ex: "bahnschrift")
+ *         FONTE_PERSONALIZADA_INITIALIZED = "1"  (chave blob 0x1372ae9a)
+ *    3. INFERIDO: mostra toast de confirmacao (nao identificado sem Ghidra).
+ *
+ *  B) Rotina de pre-lancamento do jogo (INFERIDO a partir do horario):
+ *    O Font.ini foi gravado as 07:46, ANTES do jogo abrir (07:49), e DEPOIS
+ *    do ReetFPS abrir; portanto NAO e gravado no clique do botao do painel.
+ *    Uma rotina de pre-lancamento (possivelmente em FUN_136ec13c ou no handler
+ *    de abertura do jogo) le FONTE_PERSONALIZADA_VALUE do JSON e grava:
+ *      <pasta do jogo>\Locale\Brazil\Font.ini  com o nome da fonte.
+ *    Isso e consistente com o padrao dos demais cards (handler so grava JSON;
+ *    o efeito real e aplicado por outro codigo ou pelo modulo injetado).
+ *
+ *  FONT.INI  (formato, inferido pelo valor observado "bahnschrift")
+ *    Arquivo INI de uma linha ou secao simples.  Conteudo provavel:
+ *      [Font]
+ *      name=bahnschrift
+ *    A pasta Locale\Brazil\ e o caminho de localizacao do jogo; o PB usa
+ *    esse arquivo para selecionar a fonte da sua propria interface.
+ *
+ *  LISTA DE FONTES DO PAINEL  (INFERIDO: FONTE_PERSONALIZADA_INDEX == indice)
+ *    Pelo menos "bahnschrift" e uma opcao; outras fontes do painel nao foram
+ *    identificadas sem desmontagem do form que popula o seletor.
+ *
+ *  O QUE NAO FOI COMPROVADO
+ *    - Enderecos dos botoes do card (Self+0xXXX): nao localizados.
+ *    - Strings de toast: nao encontradas nos blobs conhecidos desta regiao.
+ *    - Se ha validacao de plano ou se esta feature e gratuita.
+ *    - O formato exato do Font.ini (apenas "bahnschrift" foi observado).
+ *    - Se a escrita do Font.ini e feita pelo ReetFPS.exe ou pelo modulo
+ *      injetado (o horario 07:46 precede o jogo, sugerindo o .exe, mas
+ *      FONT_PERSONALIZADA_INITIALIZED poderia ser lida pelo modulo).
+ */
+
+/*
+ * pb_fonte_personalizada_definir  --  handler proximo a 0x1372adxx
+ *                                     (nome de metodo RTTI nao confirmado)
+ *
+ * booster  : Self (instancia do TGameBooster, em EAX)   INFERIDO
+ * indice   : indice da fonte selecionada pelo usuario    INFERIDO
+ * nome_fonte: nome da fonte (ex: L"bahnschrift")         INFERIDO
+ */
+void pb_fonte_personalizada_definir(uint8_t *booster,
+                                    int indice,
+                                    const wchar_t *nome_fonte)
+{
+    DelphiStr tmp = NULL, chave = NULL, valor = NULL;
+
+    /* INFERIDO: mesma guarda de plano dos demais cards */
+    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
+        aviso_plano_basic();                                /* FUN_135fcd18 */
+        return;
+    }
+
+    /* Grava FONTE_PERSONALIZADA = "ACTIVE" */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372ade9, 0 /*key_n*/,
+                       &tmp, 0 /*a*/, 0 /*b*/);            /* blob -> "FONTE_PERSONALIZADA" */
+    str_converter(&chave, tmp);
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372a936, 0xb8,
+                       &tmp, 0x15, 5);                     /* blob "ACTIVE" (reutilizado) */
+    str_converter(&valor, tmp);
+    config_gravar(*PTR_DAT_13811bac, chave, valor);         /* FUN_1369b158 */
+
+    /* Grava FONTE_PERSONALIZADA_INDEX = <indice como string> */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372ae24, 0 /*key_n*/,
+                       &tmp, 0 /*a*/, 0 /*b*/);            /* "FONTE_PERSONALIZADA_INDEX" */
+    str_converter(&chave, tmp);
+    /* INFERIDO: converte indice para string e chama config_gravar */
+    config_gravar(*PTR_DAT_13811bac, chave, /* IntToStr(indice) */ valor);
+
+    /* Grava FONTE_PERSONALIZADA_VALUE = <nome da fonte> */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372ae5f, 0 /*key_n*/,
+                       &tmp, 0 /*a*/, 0 /*b*/);            /* "FONTE_PERSONALIZADA_VALUE" */
+    str_converter(&chave, tmp);
+    /* INFERIDO: nome_fonte ja e uma DelphiStr ou e convertida aqui */
+    config_gravar(*PTR_DAT_13811bac, chave, /* nome_fonte */ valor);
+
+    /* Grava FONTE_PERSONALIZADA_INITIALIZED = "1"
+     * (marca que a fonte foi aplicada ao menos uma vez) */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372ae9a, 0 /*key_n*/,
+                       &tmp, 0 /*a*/, 0 /*b*/);            /* "FONTE_PERSONALIZADA_INITIALIZED" */
+    str_converter(&chave, tmp);
+    config_gravar(*PTR_DAT_13811bac, chave, valor);         /* INFERIDO: valor "1" */
+
+    /* INFERIDO: toast de confirmacao (strings nao localizadas nesta regiao) */
+}
+
+/*
+ * pb_fonte_personalizada_escrever_ini  --  rotina de pre-lancamento
+ *                                          (INFERIDO; corpo nao identificado)
+ *
+ * Le FONTE_PERSONALIZADA_VALUE do JSON e grava Font.ini no jogo.
+ * Chamada antes de iniciar o PointBlank.exe (horario 07:46 < 07:49).
+ *
+ * Caminho: <pasta do jogo> + "Locale\Brazil\Font.ini"
+ * Conteudo observado: linha com o nome da fonte (ex: "bahnschrift").
+ */
+void pb_fonte_personalizada_escrever_ini(void)
+{
+    /* INFERIDO: le FONTE_PERSONALIZADA_VALUE do JSON */
+    /* INFERIDO: obtem <pasta do jogo> via FUN_13584484 (usada pelo TRPPBConfig) */
+    /* INFERIDO: constroi caminho "Locale\Brazil\Font.ini"                       */
+    /* INFERIDO: grava o arquivo com o nome da fonte                             */
+}
+
+
+/* ===========================================================================
  *  24) CADEIA DE CARREGAMENTO: ReetFPS.exe -> ReetFPS.dll -> window.ime
  * ===========================================================================
  *
  *  SO DESCRICAO.  Esta secao explica, com enderecos, como o codigo das
  *  features do painel chega ao processo do Point Blank.  Nao ha
- *  reconstrucao em C nem passo a passo reproduzivel de injecao.
+ *  reconstrucao em C.
+ *
+ *  >>> ATUALIZACAO IMPORTANTE (2026-10-08) <<<
+ *    Esta secao foi escrita quando o modulo que roda dentro do jogo era
+ *    desconhecido.  Isso mudou.  O que esta abaixo continua valendo para a
+ *    versao ANTIGA (a ReetFPS.dll do disco, base 0x10000000), mas na versao
+ *    observada ao vivo:
+ *      - o caminho por window.ime / layout de teclado NAO e mais usado
+ *        (ponto_blank.md 2.25: o arquivo nunca aparece em System32/SysWOW64
+ *        e as strings "window.ime", "WindowMsg" e "1482301" nao existem no
+ *        modulo novo);
+ *      - o modulo e mapeado a mao na memoria privada executavel do
+ *        PointBlank.exe, foi CAPTURADO de la e analisado no Ghidra
+ *        (ponto_blank.md 2.26 e 2.27);
+ *      - portanto o item 3 e a LIMITACAO no fim desta secao estao
+ *        DESATUALIZADOS; ficam aqui porque registram o que se sabia.
  *
  *  POR QUE ESTA SECAO EXISTE
  *    Os handlers das secoes 14 e 16-22 so gravam <CHAVE> = "ACTIVE" no JSON
  *    de configuracoes; nenhum deles altera o jogo.  O codigo que altera o
- *    jogo esta num terceiro modulo, window.ime, que nao existe no disco.
+ *    jogo esta num terceiro modulo, que na versao desta analise era um
+ *    window.ime inexistente no disco.
  *
  *  1) ReetFPS.exe -- carregador web  (unit uWebLoader)
- *    - FUN_13714d2c (0x13714d2c..0x1371523f; etapa de inicializacao) chama
- *      (@ 0x137150e8) FUN_136e7958 =
+ *    - FUN_13714d2c (0x13714d2c..0x1371523f, vizinha das rotinas de login;
+ *      INFERIDO: etapa pos-login) chama (@ 0x137150e8) FUN_136e7958 =
  *      cLoadLibrary.Initialize ($ActRec @ 0x136e783b), que dispara uma
  *      tarefa assincrona (TTask, FUN_13498880).
  *    - O corpo dessa tarefa (codigo @ 0x136e75a9..0x136e7643, sem funcao
@@ -3743,21 +3974,33 @@ void gpu_nvidiaboost_aplicar(void)
  *      ImmInstallIMEW antes de chama-la, e a DLL e carregada da memoria
  *      sem arquivo (item 1).
  *
- *  3) window.ime  -- O MODULO DAS FEATURES (AUSENTE)
+ *  3) window.ime  -- O MODULO DAS FEATURES  [DESATUALIZADO, ver 2.26/2.27]
  *    Nao existe em System32, SysWOW64, Temp nem AppData (verificado) e nao
  *    apareceu entre as imagens PE embutidas no ReetFPS.exe na pesquisa.
- *    INFERIDO: e baixado do servidor na inicializacao, como a DLL.  As chaves do painel (MINIMAP, LOADINGMAP, FULLSCREEN,
+ *    INFERIDO: e baixado do servidor apos o login, como a DLL.  As chaves do painel (MINIMAP, LOADINGMAP, FULLSCREEN,
  *    KEYBOARD, SET_INTERFACE, PRIORITYPB, FPS_SELECTION_INDEX, COUNTERPING,
  *    FPSCOUNTER, HUDPLAYERS, REETSTATS, crosshair*, ...) e o JSON
  *    sincronizado com o servidor sao o unico contrato visivel entre o
  *    painel e esse modulo; COMO ele as le (servidor, registro ou memoria)
  *    nao foi verificado.
+ *      >>> RESPONDIDO em ponto_blank.md 2.27: nao e servidor nem registro.
+ *      O modulo le cada setting por MENSAGEM DE JANELA -- acha a janela
+ *      oculta "Painel_ReetFPS" do ReetFPS.exe (FindWindowA), nela a janela
+ *      filha cujo TITULO e o nome da chave (FindWindowExA) e pergunta o
+ *      valor com SendMessageA: BM_GETCHECK (0xF0) para booleano e WM_USER
+ *      (0x400) para inteiro.  O modulo tem 35 chaves proprias, diferentes
+ *      das do JSON (ex.: GRAPHIC, FPSENABLE, RESOLUTION, ULTRA_SENSI).
  *
- *  LIMITACAO
+ *  LIMITACAO  [DESATUALIZADA -- mantida como registro]
  *    O efeito real de cada feature do painel dentro do jogo (minimapa,
  *    tela cheia/F6, teclado SOCD, interface do lobby, FPS, carregamento de
  *    mapa) esta no window.ime e NAO e verificavel por analise estatica do
  *    que existe em disco.
+ *      >>> O modulo foi lido da memoria do jogo, entao ja NAO depende do que
+ *      existe em disco.  Hoje estao resolvidos, com offset e valor, o FPS,
+ *      o carregamento de mapa, o minimapa, a interface do lobby, a mira e a
+ *      Fluidez Maxima (ponto_blank.md 2.27).  Continuam SEM atribuicao o
+ *      teclado SOCD e o F6 -- nao ha chave KEYBOARD entre as 35 do modulo.
  */
 
 

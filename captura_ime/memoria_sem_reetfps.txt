@@ -1,0 +1,374 @@
+2026-10-07 11:20:14  admin=True
+
+===== PointBlank PID 13364 (inicio 10/07/2026 11:15:12) =====
+regioes commitadas: 905; executaveis: 133
+--- codigo de IMAGEM por arquivo ---
+0x00400000   26,427,392 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\PointBlank.exe
+0x04380000      253,952 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\NxCharacter.2.8.1.dll
+0x043E0000    1,626,112 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\fmodex.dll
+0x04E50000   32,202,752 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\CHEAT_BLOCKER\CB.cbm
+0x10000000       94,208 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\PhysXLoader.2.8.1.dll
+0x5D4D0000   109,150,208 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\libcef.dll
+0x653D0000      380,928 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\AcLayers.dll
+0x65670000      565,248 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\apphelp.dll
+0x668B0000       90,112 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\nlansp_c.dll
+0x668E0000       32,768 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\EtwRundown.dll
+0x66900000    1,380,352 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\InputHost.dll
+0x66A80000      372,736 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\tdh.dll
+0x66AF0000       32,768 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\cscapi.dll
+0x66B10000      139,264 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ntasn1.dll
+0x66B40000       77,824 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\msacm32.dll
+0x66B60000       12,288 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wsock32.dll
+0x66B70000       65,536 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\samcli.dll
+0x66B90000    3,428,352 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\esent.dll
+0x66F10000      114,688 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ncrypt.dll
+0x66F40000      237,568 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wevtapi.dll
+0x66F90000      266,240 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\cryptui.dll
+0x66FF0000       57,344 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\credui.dll
+0x67010000      118,784 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dxva2.dll
+0x67040000      421,888 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\winspool.drv
+0x670D0000    1,974,272 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\DWrite.dll
+0x672F0000       24,576 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\hid.dll
+0x67300000      692,224 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\chrome_elf.dll
+0x67400000       16,384 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\secur32.dll
+0x67410000      299,008 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\oleacc.dll
+0x67470000    2,928,640 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\UIAutomationCore.dll
+0x677D0000      102,400 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wtsapi32.dll
+0x67800000      610,304 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\odbc32.dll
+0x678B0000    1,859,584 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\libcrypto-1_1.dll
+0x67B30000    2,027,520 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\d3dcompiler_43.dll
+0x67D40000    5,066,752 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\d2d1.dll
+0x68260000      245,760 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\CrashTrace.dll
+0x682E0000      397,312 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\msvcp140.dll
+0x68350000    1,417,216 bytes  \Device\HarddiskVolume3\Windows\WinSxS\x86_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.26100.9444_none_b6a29f5f524122ee\GdiPlus.dll
+0x684E0000    2,682,880 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\mfc140.dll
+0x68920000    1,822,720 bytes  \Device\HarddiskVolume3\Windows\WinSxS\x86_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.9278_none_85ba527ff7ac5b07\comctl32.dll
+0x68B50000    1,826,816 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\d3d11.dll
+0x68D40000      880,640 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dxgi.dll
+0x68E50000    1,871,872 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\D3DX9_43.dll
+0x71150000      180,224 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\DXCore.dll
+0x71390000    1,425,408 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\d3d9.dll
+0x71510000       61,440 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\vcruntime140.dll
+0x71530000      212,992 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\d3dx11_43.dll
+0x71570000    1,142,784 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\dbghelp.dll
+0x71B50000      811,008 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\CoreMessaging.dll
+0x71FC0000      458,752 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\uxtheme.dll
+0x72050000      151,552 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dinput8.dll
+0x720F0000       86,016 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\powrprof.dll
+0x72190000        8,192 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\rasadhlp.dll
+0x723E0000       81,920 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dhcpcsvc.dll
+0x72400000       40,960 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dhcpcsvc6.dll
+0x72440000       94,208 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dwmapi.dll
+0x725A0000       12,288 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\version.dll
+0x72640000        4,096 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\usp10.dll
+0x72660000      118,784 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\devobj.dll
+0x72740000      114,688 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\userenv.dll
+0x72940000       36,864 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\umpdc.dll
+0x72AC0000       36,864 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\msasn1.dll
+0x72AE0000       12,288 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dpapi.dll
+0x72AF0000      299,008 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\mswsock.dll
+0x72B50000      839,680 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\winhttp.dll
+0x72DF0000      221,184 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\cfgmgr32.dll
+0x72E40000      143,360 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\sspicli.dll
+0x72E70000    2,162,688 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\iertutil.dll
+0x730C0000    1,183,744 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\urlmon.dll
+0x73260000       65,536 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\srvcli.dll
+0x73290000      745,472 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\propsys.dll
+0x73390000       49,152 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\kernel.appcore.dll
+0x73650000       16,384 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\cryptbase.dll
+0x73660000      155,648 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\rsaenh.dll
+0x736A0000       57,344 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\cryptsp.dll
+0x736C0000    6,930,432 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\windows.storage.dll
+0x73DE0000       24,576 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\netutils.dll
+0x73DF0000       53,248 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wkscli.dll
+0x73E30000       90,112 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\bcrypt.dll
+0x73E60000       20,480 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dsparse.dll
+0x743F0000      958,464 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dnsapi.dll
+0x74590000       61,440 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\netapi32.dll
+0x745B0000      147,456 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\winmm.dll
+0x74750000    2,113,536 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wininet.dll
+0x74E60000      126,976 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\IPHLPAPI.DLL
+0x74E90000      471,040 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\bcryptprimitives.dll
+0x74F10000      348,160 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\Wldap32.dll
+0x74F80000      368,640 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wintrust.dll
+0x74FF0000      458,752 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\msvcp_win.dll
+0x75210000      106,496 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\gdi32.dll
+0x75240000      663,552 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\comdlg32.dll
+0x75300000    6,230,016 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\shell32.dll
+0x75A90000      106,496 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\imm32.dll
+0x75B20000      757,760 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\msvcrt.dll
+0x75BF0000      831,488 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ole32.dll
+0x75D50000      696,320 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\rpcrt4.dll
+0x75F70000      765,952 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\SHCore.dll
+0x76050000      442,368 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\kernel32.dll
+0x761C0000      479,232 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\sechost.dll
+0x76250000    1,056,768 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ucrtbase.dll
+0x76370000    1,015,808 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\crypt32.dll
+0x76490000      811,008 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\gdi32full.dll
+0x76580000        4,096 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\psapi.dll
+0x76590000       28,672 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\win32u.dll
+0x765C0000    2,437,120 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\combase.dll
+0x76860000      311,296 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ws2_32.dll
+0x768D0000      466,944 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\advapi32.dll
+0x76960000      942,080 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\setupapi.dll
+0x76DC0000    2,629,632 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\KernelBase.dll
+0x770A0000        8,192 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\nsi.dll
+0x770C0000      909,312 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\user32.dll
+0x772B0000      589,824 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\oleaut32.dll
+0x77360000      290,816 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\shlwapi.dll
+0x773C0000       16,384 bytes  \Device\HarddiskVolume3\Windows\System32\wow64cpu.dll
+0x773D0000    1,265,664 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ntdll.dll
+--- codigo FORA de imagem (PRIVATE/MAPPED), agrupado por alocacao ---
+0x04670000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x04680000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x04720000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x04740000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x04750000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x04CB0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x07200000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+
+===== PointBlank PID 15696 (inicio 10/07/2026 11:15:04) =====
+regioes commitadas: 3601; executaveis: 204
+--- codigo de IMAGEM por arquivo ---
+0x00400000   26,427,392 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\PointBlank.exe
+0x028D0000      253,952 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\NxCharacter.2.8.1.dll
+0x043F0000    1,626,112 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\fmodex.dll
+0x0CB90000    4,792,320 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\PhysXCore.2.8.1.dll
+0x0E7C0000    2,240,512 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\d3dx9_31.dll
+0x10000000       94,208 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\PhysXLoader.2.8.1.dll
+0x5B600000   32,202,752 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\CHEAT_BLOCKER\CB.cbm
+0x5D4D0000   109,150,208 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\libcef.dll
+0x653D0000      380,928 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\AcLayers.dll
+0x65670000      565,248 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\apphelp.dll
+0x65FC0000    1,327,104 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\AudioSes.dll
+0x66140000    1,449,984 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dcomp.dll
+0x662E0000      245,760 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\fwpolicyiomgr.dll
+0x66340000      196,608 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\fwbase.dll
+0x66380000      425,984 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\FirewallAPI.dll
+0x66400000    1,855,488 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\WindowsCodecs.dll
+0x665F0000    1,015,808 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\Windows.UI.dll
+0x66710000      536,576 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\mscms.dll
+0x667C0000      487,424 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\MMDevAPI.dll
+0x66850000      274,432 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\winsta.dll
+0x668B0000       90,112 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\nlansp_c.dll
+0x668E0000       32,768 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\EtwRundown.dll
+0x66900000    1,380,352 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\InputHost.dll
+0x66A80000      372,736 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\tdh.dll
+0x66AF0000       32,768 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\cscapi.dll
+0x66B10000      139,264 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ntasn1.dll
+0x66B40000       77,824 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\msacm32.dll
+0x66B60000       12,288 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wsock32.dll
+0x66B70000       65,536 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\samcli.dll
+0x66B90000    3,428,352 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\esent.dll
+0x66F10000      114,688 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ncrypt.dll
+0x66F40000      237,568 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wevtapi.dll
+0x66F90000      266,240 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\cryptui.dll
+0x66FF0000       57,344 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\credui.dll
+0x67010000      118,784 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dxva2.dll
+0x67040000      421,888 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\winspool.drv
+0x670D0000    1,974,272 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\DWrite.dll
+0x672F0000       24,576 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\hid.dll
+0x67300000      692,224 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\chrome_elf.dll
+0x67400000       16,384 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\secur32.dll
+0x67410000      299,008 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\oleacc.dll
+0x67470000    2,928,640 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\UIAutomationCore.dll
+0x677D0000      102,400 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wtsapi32.dll
+0x67800000      610,304 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\odbc32.dll
+0x678B0000    1,859,584 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\libcrypto-1_1.dll
+0x67B30000    2,027,520 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\d3dcompiler_43.dll
+0x67D40000    5,066,752 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\d2d1.dll
+0x68260000      245,760 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\CrashTrace.dll
+0x682E0000      397,312 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\msvcp140.dll
+0x68350000    1,417,216 bytes  \Device\HarddiskVolume3\Windows\WinSxS\x86_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.26100.9444_none_b6a29f5f524122ee\GdiPlus.dll
+0x684E0000    2,682,880 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\mfc140.dll
+0x68920000    1,822,720 bytes  \Device\HarddiskVolume3\Windows\WinSxS\x86_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.9278_none_85ba527ff7ac5b07\comctl32.dll
+0x68B50000    1,826,816 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\d3d11.dll
+0x68D40000      880,640 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dxgi.dll
+0x68E50000    1,871,872 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\D3DX9_43.dll
+0x69050000    4,861,952 bytes  \Device\HarddiskVolume3\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_a4a2cbe19b6d430e\nvd3dum.dll
+0x6BC00000   56,922,112 bytes  \Device\HarddiskVolume3\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_a4a2cbe19b6d430e\nvgpucomp32.dll
+0x71150000      180,224 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\DXCore.dll
+0x71240000      667,648 bytes  \Device\HarddiskVolume3\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_a4a2cbe19b6d430e\nvppe.dll
+0x71390000    1,425,408 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\d3d9.dll
+0x71510000       61,440 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\vcruntime140.dll
+0x71530000      212,992 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\d3dx11_43.dll
+0x71570000    1,142,784 bytes  \Device\HarddiskVolume3\Zepetto\PointBlank\dbghelp.dll
+0x716C0000      933,888 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\TextShaping.dll
+0x717B0000      913,408 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\WinTypes.dll
+0x718B0000    1,556,480 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\CoreUIComponents.dll
+0x71B50000      811,008 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\CoreMessaging.dll
+0x71C40000      962,560 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\TextInputFramework.dll
+0x71D70000      925,696 bytes  \Device\HarddiskVolume3\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_a4a2cbe19b6d430e\NvMemMapStorage.dll
+0x71E90000    1,122,304 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\drvstore.dll
+0x71FC0000      458,752 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\uxtheme.dll
+0x72050000      151,552 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dinput8.dll
+0x720F0000       86,016 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\powrprof.dll
+0x721A0000      114,688 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\winmmbase.dll
+0x721D0000       40,960 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ResourcePolicyClient.dll
+0x721F0000      270,336 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\directxdatabasehelper.dll
+0x72250000      139,264 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\cryptnet.dll
+0x72280000       90,112 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\gpapi.dll
+0x723E0000       81,920 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dhcpcsvc.dll
+0x72400000       40,960 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dhcpcsvc6.dll
+0x72420000       57,344 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\Microsoft.Internal.WarpPal.dll
+0x72440000       94,208 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dwmapi.dll
+0x725A0000       12,288 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\version.dll
+0x72640000        4,096 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\usp10.dll
+0x72660000      118,784 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\devobj.dll
+0x72690000      548,864 bytes  \Device\HarddiskVolume3\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_a4a2cbe19b6d430e\nvldumd.dll
+0x72740000      114,688 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\userenv.dll
+0x72940000       36,864 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\umpdc.dll
+0x72960000      331,776 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wldp.dll
+0x72A90000      131,072 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ntmarta.dll
+0x72AC0000       36,864 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\msasn1.dll
+0x72AE0000       12,288 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dpapi.dll
+0x72AF0000      299,008 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\mswsock.dll
+0x72B50000      839,680 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\winhttp.dll
+0x72DF0000      221,184 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\cfgmgr32.dll
+0x72E40000      143,360 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\sspicli.dll
+0x72E70000    2,162,688 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\iertutil.dll
+0x730C0000    1,183,744 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\urlmon.dll
+0x73260000       65,536 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\srvcli.dll
+0x73290000      745,472 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\propsys.dll
+0x73360000       94,208 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\profapi.dll
+0x73390000       49,152 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\kernel.appcore.dll
+0x73650000       16,384 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\cryptbase.dll
+0x73660000      155,648 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\rsaenh.dll
+0x736A0000       57,344 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\cryptsp.dll
+0x736C0000    6,930,432 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\windows.storage.dll
+0x73DE0000       24,576 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\netutils.dll
+0x73DF0000       53,248 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wkscli.dll
+0x73E30000       90,112 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\bcrypt.dll
+0x73E60000       20,480 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dsparse.dll
+0x743F0000      958,464 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\dnsapi.dll
+0x74590000       61,440 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\netapi32.dll
+0x745B0000      147,456 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\winmm.dll
+0x74750000    2,113,536 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wininet.dll
+0x74E60000      126,976 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\IPHLPAPI.DLL
+0x74E90000      471,040 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\bcryptprimitives.dll
+0x74F10000      348,160 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\Wldap32.dll
+0x74F80000      368,640 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\wintrust.dll
+0x74FF0000      458,752 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\msvcp_win.dll
+0x75210000      106,496 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\gdi32.dll
+0x75240000      663,552 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\comdlg32.dll
+0x75300000    6,230,016 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\shell32.dll
+0x75970000    1,052,672 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\msctf.dll
+0x75A90000      106,496 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\imm32.dll
+0x75B20000      757,760 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\msvcrt.dll
+0x75BF0000      831,488 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ole32.dll
+0x75D50000      696,320 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\rpcrt4.dll
+0x75EC0000       69,632 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\imagehlp.dll
+0x75EE0000      483,328 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\clbcatq.dll
+0x75F70000      765,952 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\SHCore.dll
+0x76050000      442,368 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\kernel32.dll
+0x761C0000      479,232 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\sechost.dll
+0x76250000    1,056,768 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ucrtbase.dll
+0x76370000    1,015,808 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\crypt32.dll
+0x76490000      811,008 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\gdi32full.dll
+0x76580000        4,096 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\psapi.dll
+0x76590000       28,672 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\win32u.dll
+0x765C0000    2,437,120 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\combase.dll
+0x76860000      311,296 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ws2_32.dll
+0x768D0000      466,944 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\advapi32.dll
+0x76960000      942,080 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\setupapi.dll
+0x76DC0000    2,629,632 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\KernelBase.dll
+0x770A0000        8,192 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\nsi.dll
+0x770C0000      909,312 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\user32.dll
+0x772B0000      589,824 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\oleaut32.dll
+0x77360000      290,816 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\shlwapi.dll
+0x773C0000       16,384 bytes  \Device\HarddiskVolume3\Windows\System32\wow64cpu.dll
+0x773D0000    1,265,664 bytes  \Device\HarddiskVolume3\Windows\SysWOW64\ntdll.dll
+--- codigo FORA de imagem (PRIVATE/MAPPED), agrupado por alocacao ---
+0x04910000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x04920000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x04930000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x04940000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x04E20000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x04E30000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x04FB0000  PRIVATE  alocado RW  total  1,044,480 bytes  codigo      4,096  partes 3  [MISTO: codigo + dados, layout tipo PE]
+      layout: RW:516,096 RWX:4,096 RW:524,288
+0x05330000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x058D0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x06580000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x09B70000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x09B90000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x09EE0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x09EF0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x09F00000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x09F10000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x09F20000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x09F30000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x0A090000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x0A0A0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x0A0B0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x0A0C0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x0A0D0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x0A0E0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x0A0F0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x0A100000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x0A110000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x0ADF0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x0AE10000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x0AE20000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x0AF30000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x0AF40000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x0AF50000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x0AF60000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x0AF70000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x0AF80000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x0AF90000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RWX:4,096
+0x13E10000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x2D2C0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x2E1B0000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x2E230000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x2E240000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
+0x2E250000  PRIVATE  alocado RWX  total      4,096 bytes  codigo      4,096  partes 1
+      layout: RX:4,096
