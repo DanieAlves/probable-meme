@@ -1322,6 +1322,54 @@ nenhum pede o breakpoint. **Não verificado:** quais features usam os quatro
 breakpoints, já que as quatro bases de módulo estavam zeradas na captura
 (2.26) — a mesma razão que impede resolver o alvo do detour `0x10854`.
 
+### 2.28. Reconstrução C das funções-chave (2026-10-08)
+
+Com base nas decompilações do Ghidra (seções 2.26–2.27) e nos padrões dos
+handlers existentes, as seguintes funções foram adicionadas ao `ponto_blank.c`:
+
+#### Do lado `ReetFPS.exe` (seção 9, 16 e 25)
+
+| Função nova | Endereço | Feature |
+|---|---|---|
+| `pb_graphic_ativar` | GRAPHIC_OFFClick `0x1372a03c` | Fluidez Máxima — grava `FLUIDEZMAX=ACTIVE` e notifica overlay |
+| `pb_graphic_restaurar` | GRAPHIC_ONClick `0x1372a37c` | Desfaz Fluidez Máxima |
+| `pb_interfacedelay_ativar` | INTERFACEDELAY_OFFClick `0x1372d4b8` | Interface Sem Delay — grava `INTERFACE`, `SET_INTERFACE`, remove `SET_INTERFACE2` |
+| `pb_interfacedelay_restaurar` | INTERFACEDELAY_ONClick `0x1372d948` | Remove as três chaves |
+| `pb_fonte_personalizada_escrever_ini` | rotina de pré-lançamento (INFERIDO) | Lê `FONTE_PERSONALIZADA_VALUE` e grava `Locale\Brazil\Font.ini` |
+
+Os blobs de string de `pb_graphic_*` estão marcados como INFERIDO (a função
+`0x1372a03c` não foi decompilada no Ghidra). Os demais são baseados nos
+endereços de blob listados na descrição do handler da seção 2.12.
+
+#### Do lado do módulo injetado (seção 26 do `ponto_blank.c`)
+
+Reconstrução em C das funções do módulo capturado do processo do jogo:
+
+| Função nova | RVA no módulo | O que faz |
+|---|---|---|
+| `mod_ipc_find_painel` | `0x655D0` | `FindWindowA("Painel_ReetFPS")` |
+| `mod_ipc_find_chave` | `0x656A0` | `FindWindowExA` pelo título da chave |
+| `mod_ipc_ler_bool` | `0x65740` | `BM_GETCHECK (0xF0)` → bool |
+| `mod_ipc_ler_int` | `0x658E0` | `WM_USER (0x400)` → int |
+| `mod_settings_ler` | `0x65980` | Lê todas as 35 chaves do painel |
+| `mod_patch_fps` | `0x55640` | Escreve FPS em `base_pb + 0x500141` |
+| `mod_patch_interface` | `0x55580` | Escreve float em `base_pb + 0x212153` |
+| `mod_patch_cross` | `0x50B40` | Alterna byte `0xEB`/`0x74` em `base_pb + 0x100840` |
+| `mod_patch_loadingmap` | parte de `0x55730` | Escreve `0xC98B` (no-op), one-shot |
+| `mod_patch_minimap` | parte de `0x55730` | Escreve byte `4` em `base_pb + 0x59134`, one-shot com delay |
+| `mod_patches_aplicar` | `0x55BC0` / `0x55730` | Dispatcher de todos os patches por frame |
+| `mod_graphic_instalar_detour` | `0x55410` | Copia stub de 14 bytes e instala `CALL rel32` |
+| `mod_graphic_ramp` | `0x55030` | Sobe multiplicador +0.005/200 ms até máximo |
+| `mod_graphic_aplicar` | `0x55410` | Instala detour + atualiza multiplicador em `base_pb + 0x400` |
+| `TModOverlayState` + `k_mod_cores_crosshair` | `0x62E80` area | Tipos do overlay ImGui (mira, FPS, HUD) |
+
+A tabela `k_mod_cores_crosshair[7]` documenta as seis cores ARGB da mira
+(`0xffff0000` … `0xffffffff`) extraídas do bloco if/else de `FUN_20235980`.
+
+A cifra "Painel_ReetFPS" (XOR 0x68, 14 bytes) foi decifrada byte a byte a
+partir dos literais de pilha de `FUN_202355d0` e incluída no corpo de
+`mod_ipc_find_painel`.
+
 ---
 
 ## 3. Resumo em uma linha

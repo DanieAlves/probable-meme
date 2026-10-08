@@ -1142,6 +1142,75 @@ void executar_itens_habilitados(void *panel)
     iniciar_dispatcher();
 }
 
+/*
+ * pb_graphic_ativar  --  GRAPHIC_OFFClick @ 0x1372a03c
+ *
+ * Handler do card "Fluidez maxima" (chave FLUIDEZMAX no JSON do .exe;
+ * chave GRAPHIC no modulo injetado).  Segue o padrao dos demais cards.
+ *
+ * Blobs de string (decodificados): INFERIDO -- a funcao nao foi decompilada
+ * no Ghidra; os blobs marcados sao placeholders baseados na regiao observada.
+ *
+ * booster     : Self (TGameBooster, EAX)
+ * mostrar_card: EDX; != 0 exibe o card de notificacao
+ */
+void pb_graphic_ativar(uint8_t *booster, int mostrar_card)
+{
+    DelphiStr tmp = NULL, chave = NULL, valor = NULL;
+
+    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
+        aviso_plano_basic();                                /* FUN_135fcd18 */
+        return;
+    }
+
+    /* Grava FLUIDEZMAX = "ACTIVE" no JSON.
+     * INFERIDO: blob de chave proximo de 0x1372a180; blob de valor ACTIVE
+     *           reutilizado dos demais cards.                               */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372a180, 0, &tmp, 0, 0);
+    str_converter(&chave, tmp);                            /* -> "FLUIDEZMAX" */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372a936, 0xb8, &tmp, 0x15, 5);
+    str_converter(&valor, tmp);                            /* -> "ACTIVE"     */
+    config_gravar(*PTR_DAT_13811bac, chave, valor);        /* FUN_1369b158    */
+
+    /* Troca os botoes do card: INFERIDO -- offsets semelhantes aos outros. */
+    vcl_set_visible(*(void **)(booster + 0x568), 0);
+    vcl_set_visible(*(void **)(booster + 0x564), 1);
+
+    /* Notifica overlay: INFERIDO -- offset do controle nao verificado.     */
+    controle_vt188(*(void **)((uint8_t *)*PTR_DAT_1381110c + 0x500), 1);
+
+    if (mostrar_card) {
+        /* INFERIDO: titulo "Fluidez maxima aplicada!" e corpo explicativo.  */
+        FUN_1358027c(L"ReetFPS",
+                     L"Fluidez maxima ativada!\r\n"
+                     L"O jogo foi otimizado para maxima fluidez de animacao.",
+                     0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+                     L"icon.png",
+                     -1, -1, -1, 1, 1, 1);
+    }
+}
+
+/*
+ * pb_graphic_restaurar  --  GRAPHIC_ONClick @ 0x1372a37c
+ *
+ * Remove FLUIDEZMAX do JSON e desfaz os botoes.
+ */
+void pb_graphic_restaurar(uint8_t *booster)
+{
+    DelphiStr tmp = NULL, chave = NULL;
+
+    /* INFERIDO: remove FLUIDEZMAX */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372a180, 0, &tmp, 0, 0);
+    str_converter(&chave, tmp);
+    config_remover(*PTR_DAT_13811bac, chave);              /* FUN_1369ae6c */
+
+    /* Restaura botoes */
+    vcl_set_visible(*(void **)(booster + 0x564), 0);
+    vcl_set_visible(*(void **)(booster + 0x568), 1);
+
+    controle_vt188(*(void **)((uint8_t *)*PTR_DAT_1381110c + 0x500), 0);
+}
+
 
 /* ===========================================================================
  *  10) TIMER RESOLUTION  (BUTTON_TIMER_RESOLUTION_ON @ 0x137805cc)
@@ -2467,6 +2536,110 @@ void pb_interface_transparencia_religar(uint8_t *painel)
                  0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
                  L"icon.png",                                        /* 0x136b3720 */
                  -1, -1, -1, 1, 1, 1);
+}
+
+/* --- Card INTERFACEDELAY --- */
+
+/* Auxiliares extras (decodificar_string, config_gravar, config_remover,
+ * controle_vt188, vcl_set_visible, aviso_plano_basic e PTR_DAT_13811bac
+ * declarados nas secoes anteriores).                                         */
+extern void config_remover_chave(void *store, DelphiStr chave);    /* FUN_1369ae6c */
+
+/*
+ * pb_interfacedelay_ativar  --  INTERFACEDELAY_OFFClick @ 0x1372d4b8
+ *
+ * booster     : Self (TGameBooster, EAX)
+ * mostrar_card: EDX; != 0 exibe o card de notificacao
+ *
+ * Recostrucao a partir das chamadas listadas no cabecalho da secao 16.
+ * Blobs de strings sao enderecos no binario; os textos decodificados
+ * constam nos comentarios.
+ */
+void pb_interfacedelay_ativar(uint8_t *booster, int mostrar_card)
+{
+    DelphiStr tmp = NULL, chave = NULL, valor = NULL;
+
+    if (*(int *)PTR_DAT_13810cd8 == 0 && *(int *)PTR_DAT_13811928 == 0) {
+        aviso_plano_basic();                                /* FUN_135fcd18 */
+        return;
+    }
+
+    vcl_set_visible(*(void **)(booster + 0x5dc), 1);       /* exibe o controle de status */
+
+    /* Grava INTERFACE = "ACTIVE" */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372d7f8, 0, &tmp, 0, 0);
+    str_converter(&chave, tmp);                            /* -> "INTERFACE" */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372d810, 0xb8, &tmp, 0x15, 5);
+    str_converter(&valor, tmp);                            /* -> "ACTIVE" */
+    config_gravar(*PTR_DAT_13811bac, chave, valor);        /* FUN_1369b158 */
+
+    /* Grava SET_INTERFACE = "ACTIVE" */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372d828, 0, &tmp, 0, 0);
+    str_converter(&chave, tmp);                            /* -> "SET_INTERFACE" */
+    config_gravar(*PTR_DAT_13811bac, chave, valor);        /* mesmo "ACTIVE" */
+
+    /* Remove SET_INTERFACE2 */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372d844, 0, &tmp, 0, 0);
+    str_converter(&chave, tmp);                            /* -> "SET_INTERFACE2" */
+    config_remover_chave(*PTR_DAT_13811bac, chave);        /* FUN_1369ae6c */
+
+    /* Troca os botoes do card */
+    vcl_set_visible(*(void **)(booster + 0x4d4), 0);       /* oculta INTERFACEDELAY_OFF */
+    vcl_set_visible(*(void **)(booster + 0x4cc), 1);       /* exibe  INTERFACEDELAY_ON  */
+
+    /* Notifica overlay (vtable[0x188] = SetChecked) */
+    controle_vt188(*(void **)((uint8_t *)*PTR_DAT_1381110c + 0x4ac), 1);
+
+    if (mostrar_card) {
+        DelphiStr titulo = NULL, corpo1 = NULL, corpo2 = NULL;
+        decodificar_string(*PTR_DAT_13811378, (void *)0x1372d87c, 0, &tmp, 0, 0);
+        str_converter(&corpo1, tmp);
+        /* "A otimizacao da interface foi ativada com sucesso." */
+        decodificar_string(*PTR_DAT_13811378, (void *)0x1372d8d0, 0, &tmp, 0, 0);
+        str_converter(&corpo2, tmp);
+        /* "Agora, a navegacao entre as interfaces do lobby do Point Blank
+            esta mais rapida e sem delays!" */
+        decodificar_string(*PTR_DAT_13811378, (void *)0x1372d864, 0, &tmp, 0, 0);
+        str_converter(&titulo, tmp);
+        FUN_1358027c(titulo, corpo1,
+                     0x1194, 5, 0xe, 0xc, 0xa0, 0x17c, 0xf5,
+                     L"icon.png",                          /* 0x1372d864 area */
+                     -1, -1, -1, 1, 1, 1);
+        /* INFERIDO: o segundo paragrafo (corpo2) e concatenado pelo card.  */
+        (void)corpo2;
+    }
+}
+
+/*
+ * pb_interfacedelay_restaurar  --  INTERFACEDELAY_ONClick @ 0x1372d948
+ *
+ * Remove INTERFACE, SET_INTERFACE e SET_INTERFACE2 do JSON; troca os botoes.
+ * Nao mostra card (padrao dos handlers *_ONClick).
+ */
+void pb_interfacedelay_restaurar(uint8_t *booster)
+{
+    DelphiStr tmp = NULL, chave = NULL;
+
+    /* Remove INTERFACE (chamada @ 0x1372d990) */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372d7f8, 0, &tmp, 0, 0);
+    str_converter(&chave, tmp);
+    config_remover_chave(*PTR_DAT_13811bac, chave);        /* FUN_1369ae6c */
+
+    /* Remove SET_INTERFACE (chamada @ 0x1372d9c8) */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372d828, 0, &tmp, 0, 0);
+    str_converter(&chave, tmp);
+    config_remover_chave(*PTR_DAT_13811bac, chave);
+
+    /* Remove SET_INTERFACE2 (chamada @ 0x1372da06) */
+    decodificar_string(*PTR_DAT_13811378, (void *)0x1372d844, 0, &tmp, 0, 0);
+    str_converter(&chave, tmp);
+    config_remover_chave(*PTR_DAT_13811bac, chave);
+
+    /* Restaura botoes */
+    vcl_set_visible(*(void **)(booster + 0x4cc), 0);
+    vcl_set_visible(*(void **)(booster + 0x4d4), 1);
+
+    controle_vt188(*(void **)((uint8_t *)*PTR_DAT_1381110c + 0x4ac), 0);
 }
 
 
@@ -3864,12 +4037,49 @@ void pb_fonte_personalizada_definir(uint8_t *booster,
  * Caminho: <pasta do jogo> + "Locale\Brazil\Font.ini"
  * Conteudo observado: linha com o nome da fonte (ex: "bahnschrift").
  */
+/*
+ * Auxiliares usados por esta funcao.
+ * FUN_13584484 = obter_pasta_jogo; le o caminho do PB do mesmo contexto
+ *               que TRPPBConfig.  Retorna DelphiStr com o diretorio
+ *               (com barra final).
+ * FUN_1316c2fc = str_from_wchar; converte LPCWSTR para DelphiStr.
+ * SaveToFile / TStringList.SaveToFile: rotina da RTL Delphi que grava uma
+ *               TStringList num arquivo.
+ */
+extern void  obter_pasta_jogo(void *ctx, DelphiStr *dst);          /* FUN_13584484 */
+extern void  str_from_wchar(const wchar_t *src, DelphiStr *dst);   /* FUN_1316c2fc */
+/* str_concatenar (FUN_1314c7d0) declarada na secao 1. */
+/* criar_lista (FUN_13206ce8) e destruir_lista (FUN_13149ad8): secao 1. */
+extern void  lista_add_str(void *lista, DelphiStr s);              /* FUN_13206ed0 */
+extern void  lista_save_to_file(void *lista, const wchar_t *path); /* FUN_13215440 -- SaveToFile */
+
 void pb_fonte_personalizada_escrever_ini(void)
 {
-    /* INFERIDO: le FONTE_PERSONALIZADA_VALUE do JSON */
-    /* INFERIDO: obtem <pasta do jogo> via FUN_13584484 (usada pelo TRPPBConfig) */
-    /* INFERIDO: constroi caminho "Locale\Brazil\Font.ini"                       */
-    /* INFERIDO: grava o arquivo com o nome da fonte                             */
+    DelphiStr valor = NULL, pasta = NULL, caminho = NULL, sufixo = NULL;
+
+    /* Le FONTE_PERSONALIZADA_VALUE do JSON de configuracoes.
+     * Se nao houver valor (fonte nunca configurada), nao escreve nada. */
+    config_ler_str(*(void **)PTR_DAT_13811bac,
+                   L"FONTE_PERSONALIZADA_VALUE", &valor);           /* FUN_1369b8f4 */
+    if (valor == NULL) return;
+
+    /* Obtem o caminho de instalacao do PointBlank.
+     * INFERIDO: o contexto passado e o objeto TRPPBConfig global ou o
+     *           contexto de busca de instalacao da secao 1. */
+    obter_pasta_jogo(*(void **)PTR_DAT_13811378, &pasta);          /* FUN_13584484 */
+    if (pasta == NULL) return;
+
+    /* Constroi pasta + "Locale\Brazil\Font.ini"
+     * (sufixo confirmado pela observacao ao vivo: 07:46 gravo bahnschrift). */
+    str_from_wchar(L"Locale\\Brazil\\Font.ini", &sufixo);
+    str_concatenar(&pasta, sufixo);                                /* FUN_1314c7d0 */
+    caminho = pasta;
+
+    /* Cria TStringList com uma linha = nome da fonte e grava o arquivo. */
+    void *lista = criar_lista(&PTR_FUN_131d5998, /*alocar=*/1);    /* FUN_13206ce8 */
+    lista_add_str(lista, valor);                                   /* FUN_13206ed0 */
+    lista_save_to_file(lista, (const wchar_t *)caminho);           /* FUN_13215440 */
+    destruir_lista(lista);                                         /* FUN_13149ad8 */
 }
 
 
@@ -4002,6 +4212,524 @@ void pb_fonte_personalizada_escrever_ini(void)
  *      Fluidez Maxima (ponto_blank.md 2.27).  Continuam SEM atribuicao o
  *      teclado SOCD e o F6 -- nao ha chave KEYBOARD entre as 35 do modulo.
  */
+
+
+/* ===========================================================================
+ *  26) MODULO INJETADO: reconstrucao das funcoes-chave
+ *      (bloco_PID20108_0x201D0000_GHIDRA.bin, base 0x201D0000)
+ * ===========================================================================
+ *
+ *  Este modulo roda DENTRO do processo do PointBlank.exe.  Cada offset RVA
+ *  listado foi lido do Ghidra apontado para o dump de memoria capturado
+ *  em 2026-10-07 / analisado em 2026-10-08.
+ *
+ *  Convencao de nomenclatura:  mod_*  = funcao do modulo injetado.
+ *  "base_pb" = base do PointBlank.exe = 0x00400000 = DAT_2037d2f8.
+ *  "base_mod" = base do modulo = 0x201D0000.
+ *
+ *  Primitivos de escrita na memoria do jogo (RVA 0x75CC0..0x76300):
+ *    FUN_20245f30  (RVA 0x75F30)  -- escreve 1 byte
+ *    FUN_20246300  (RVA 0x76300)  -- escreve 2 bytes (word)
+ *    FUN_202460c0  (RVA 0x760C0)  -- escreve 4 bytes (dword)
+ *    FUN_20246230  (RVA 0x76230)  -- escreve float (XMM1, 4 bytes)
+ *  Todos: VirtualProtect(alvo, 8, PAGE_EXECUTE_READWRITE) -> escreve -> restaura.
+ *  Verificam DAT_2037d2f8 <= alvo (piso de seguranca).
+ */
+
+/* ---- Tipos e helpers de baixo nivel do modulo ---- */
+#include <windows.h>   /* HWND, FindWindowA, FindWindowExA, SendMessageA */
+#include <stdio.h>     /* sscanf */
+
+/* Instalador de detour inline: escreve CALL rel32 (5 bytes) em target,
+ * apontando para stub.
+ * Original: FUN_20214670 @ RVA 0x44670.
+ * VirtualProtect via FUN_20214550 (RVA 0x44550, wrapper de VirtualProtect). */
+static void mod_instalar_detour(uint8_t *target, uint8_t *stub)
+{
+    DWORD old;
+    VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &old);
+    target[0] = 0xE8;                                          /* CALL rel32 */
+    *(int *)(target + 1) = (int)(stub - target) - 5;
+    VirtualProtect(target, 5, old, &old);
+}
+
+/* ---- IPC com a janela oculta Painel_ReetFPS ---- */
+
+/*
+ * mod_ipc_find_painel  --  FUN_202355d0 @ RVA 0x655D0
+ *
+ * Decifra "Painel_ReetFPS" (XOR 0x68, 14 bytes) e chama
+ * FindWindowA(NULL, "Painel_ReetFPS").
+ */
+static HWND mod_ipc_find_painel(void)
+{
+    /* Bytes cifrados do literal "Painel_ReetFPS":
+     *   local_14 = 0x1093868  uStack_10 = 0x37040d06
+     *   uStack_c = 0x1c0d0d3a uStack_8  = 0x3b382e        */
+    char buf[16];
+    const uint8_t enc[] = {
+        0x38, 0x09, 0x01,              /* da local_14 (LE, bytes +1..+3) */
+        0x06, 0x0d, 0x04, 0x37,        /* uStack_10 */
+        0x3a, 0x0d, 0x0d, 0x1c,        /* uStack_c */
+        0x2e, 0x38, 0x3b               /* uStack_8  */
+    };
+    for (int i = 0; i < 14; i++) buf[i] = (char)(enc[i] ^ 0x68);
+    buf[14] = '\0';
+    return FindWindowA(NULL, buf);                            /* "Painel_ReetFPS" */
+}
+
+/*
+ * mod_ipc_find_chave  --  FUN_202356a0 @ RVA 0x656A0
+ *
+ * Encontra a janela filha de Painel_ReetFPS cujo TITULO e o nome da chave.
+ * Retorna NULL se a janela principal nao existir.
+ *
+ * Globals persistentes: pHRam2037d220 (painel), pHRam2037d460 (filha).
+ */
+static HWND mod_ipc_find_chave(const char *nome_chave)
+{
+    HWND painel = mod_ipc_find_painel();
+    if (painel == NULL) return NULL;
+    return FindWindowExA(painel, NULL, NULL, nome_chave);
+}
+
+/*
+ * mod_ipc_ler_bool  --  FUN_20235740 @ RVA 0x65740
+ *
+ * Envia BM_GETCHECK (0xF0) para a janela filha.
+ * Retorna 1 se o resultado for BST_CHECKED (1), 0 caso contrario.
+ * Se a janela nao existir, retorna `padrao`.
+ */
+static int mod_ipc_ler_bool(HWND filha, int padrao)
+{
+    if (filha == NULL) return padrao;
+    return SendMessageA(filha, 0xF0, 0, 0) == 1 ? 1 : 0;
+}
+
+/*
+ * mod_ipc_ler_int  --  FUN_202358e0 @ RVA 0x658E0
+ *
+ * Envia WM_USER (0x400) para a janela filha e retorna o LRESULT como inteiro.
+ * Se a janela nao existir, retorna `padrao`.
+ */
+static int mod_ipc_ler_int(HWND filha, int padrao)
+{
+    if (filha == NULL) return padrao ? 1 : 0;
+    return (int)SendMessageA(filha, 0x400, 0, 0);
+}
+
+/* ---- Dispatcher de configuracoes (FUN_20235980, RVA 0x65980) ---- */
+
+/*
+ * Globals de configuracao lidos do painel (um por chave, ver lista em
+ * ponto_blank.md 2.27 "Etapa 2").  Nomenclatura: g_mod_<CHAVE>.
+ * Declarados como globais do modulo; os tipos refletem o retorno do
+ * primitivo de leitura usado (bool/int).
+ */
+extern int   g_mod_FPSENABLE;           /* DAT_2037d27c  -- bool */
+extern int   g_mod_DISPLAY_FPS;         /* DAT_2037e4b8  -- bool */
+extern int   g_mod_DISPLAY_RAM;         /* DAT_2037d228  -- bool */
+extern int   g_mod_DISPLAY_CPU;         /* DAT_2037d330  -- bool */
+extern int   g_mod_DISPLAY_GPU;         /* DAT_2037e454  -- bool */
+extern int   g_mod_DISPLAY_PING;        /* DAT_2037e424  -- bool */
+extern int   g_mod_DISPLAY_TIME;        /* DAT_2037e4a4  -- bool */
+extern int   g_mod_DISPLAY_HORZ;        /* DAT_2037d458  -- bool */
+extern int   g_mod_FPS_COUNTER_POSITION;/* DAT_2037e49c  -- bool */
+extern int  *g_mod_FPS_SELECTION_INDEX; /* puRam2037e438 -- int* */
+extern int   g_mod_CROSS;              /* DAT_2037d2e4  -- bool */
+extern int   g_mod_CROSSHAIR_SIZE_LINE; /* DAT_2037d2d8  -- int */
+extern int   g_mod_CROSSHAIR_SPACE;     /* DAT_2037d29c  -- int */
+extern int   g_mod_CROSSHAIR_SQUAR;     /* DAT_2037d238  -- int */
+extern int  *g_mod_CROSSHAIR_COLOR;     /* DAT_2037e46c  -- int (1..6) */
+extern int   g_mod_CROSSHAIR_THICKNESS; /* DAT_2037d44c  -- int */
+extern int   g_mod_CROSSHAIR_SHADOW;    /* DAT_2037d218  -- bool */
+extern int   g_mod_GRAPHIC;             /* DAT_2037e4a0  -- bool */
+extern int   g_mod_INTERFACE;           /* DAT_2037d224  -- bool */
+extern int   g_mod_LOADINGMAP;          /* DAT_2037e470  -- bool */
+extern int   g_mod_REMOVE_MINIMAP;      /* DAT_2037d2f4  -- bool */
+/* demais chaves (BORDER_LESS, RESOLUTION, HUD_*, WEAPON_*, etc.) omitidas */
+
+/*
+ * mod_settings_ler  --  FUN_20235980 @ RVA 0x65980  (simplificado)
+ *
+ * Chamado periodicamente pelo loop do modulo.
+ * Verifica se a janela Painel_ReetFPS existe (FUN_20235610 @ RVA 0x65610);
+ * se sim, le cada uma das 35 chaves pelas funcoes IPC acima e guarda nos
+ * globals correspondentes.
+ *
+ * Este e o caminho completo que prova o IPC por janelas escondidas, descrito
+ * em ponto_blank.md 2.27 "Etapa 1".
+ */
+void mod_settings_ler(void)
+{
+    HWND h;
+
+    /* Verifica se o painel esta vivo (FUN_20235610 testa FindWindowA). */
+    if (mod_ipc_find_painel() == NULL) return;
+
+    /* FPSENABLE */
+    h = mod_ipc_find_chave("FPSENABLE");
+    g_mod_FPSENABLE = mod_ipc_ler_bool(h, 0);
+
+    /* DISPLAY_FPS (e demais DISPLAY_*): mesma logica, chave diferente */
+    h = mod_ipc_find_chave("DISPLAY_FPS");
+    g_mod_DISPLAY_FPS = mod_ipc_ler_bool(h, 0);
+
+    h = mod_ipc_find_chave("DISPLAY_RAM");
+    g_mod_DISPLAY_RAM = mod_ipc_ler_bool(h, 0);
+
+    h = mod_ipc_find_chave("DISPLAY_CPU");
+    g_mod_DISPLAY_CPU = mod_ipc_ler_bool(h, 0);
+
+    h = mod_ipc_find_chave("DISPLAY_GPU");
+    g_mod_DISPLAY_GPU = mod_ipc_ler_bool(h, 0);
+
+    h = mod_ipc_find_chave("DISPLAY_PING");
+    g_mod_DISPLAY_PING = mod_ipc_ler_bool(h, 0);
+
+    h = mod_ipc_find_chave("DISPLAY_TIME");
+    g_mod_DISPLAY_TIME = mod_ipc_ler_bool(h, 0);
+
+    h = mod_ipc_find_chave("DISPLAY_HORZ");
+    g_mod_DISPLAY_HORZ = mod_ipc_ler_bool(h, 0);
+
+    h = mod_ipc_find_chave("FPS_COUNTER_POSITION");
+    g_mod_FPS_COUNTER_POSITION = mod_ipc_ler_bool(h, 0);
+
+    /* CROSS (mira: toggle de opcode JMP/JZ em base_pb + 0x100840) */
+    h = mod_ipc_find_chave("CROSS");
+    g_mod_CROSS = mod_ipc_ler_bool(h, 0);
+
+    /* CROSSHAIR_* (overlay de mira: int via WM_USER) */
+    h = mod_ipc_find_chave("CROSSHAIR_SIZE_LINE");
+    g_mod_CROSSHAIR_SIZE_LINE = mod_ipc_ler_int(h, 0);
+
+    h = mod_ipc_find_chave("CROSSHAIR_SPACE");
+    g_mod_CROSSHAIR_SPACE = mod_ipc_ler_int(h, 0);
+
+    h = mod_ipc_find_chave("CROSSHAIR_SQUAR");
+    g_mod_CROSSHAIR_SQUAR = mod_ipc_ler_int(h, 0);
+
+    h = mod_ipc_find_chave("CROSSHAIR_COLOR");
+    g_mod_CROSSHAIR_COLOR = (int *)mod_ipc_ler_int(h, 0);   /* 1..6 */
+
+    h = mod_ipc_find_chave("CROSSHAIR_THICKNESS");
+    g_mod_CROSSHAIR_THICKNESS = mod_ipc_ler_int(h, 0);
+
+    h = mod_ipc_find_chave("CROSSHAIR_SHADOW");
+    g_mod_CROSSHAIR_SHADOW = mod_ipc_ler_bool(h, 1);        /* padrao = ligado */
+
+    /* GRAPHIC (Fluidez Maxima: detour em base_pb + 0x10854) */
+    h = mod_ipc_find_chave("GRAPHIC");
+    g_mod_GRAPHIC = mod_ipc_ler_bool(h, 0);
+
+    /* INTERFACE (Interface Sem Delay: float em base_pb + 0x212153) */
+    h = mod_ipc_find_chave("INTERFACE");
+    g_mod_INTERFACE = mod_ipc_ler_bool(h, 0);
+
+    /* LOADINGMAP (patch MOV ECX,ECX em ponteiro variavel, one-shot) */
+    h = mod_ipc_find_chave("LOADINGMAP");
+    g_mod_LOADINGMAP = mod_ipc_ler_bool(h, 0);
+
+    /* REMOVE_MINIMAP (byte 4 em base_pb + 0x59134, one-shot, delay 1 s) */
+    h = mod_ipc_find_chave("REMOVE_MINIMAP");
+    g_mod_REMOVE_MINIMAP = mod_ipc_ler_bool(h, 0);
+
+    /* FPS_SELECTION_INDEX (int 1..6 via WM_USER; fora da faixa -> 360) */
+    h = mod_ipc_find_chave("FPS_SELECTION_INDEX");
+    g_mod_FPS_SELECTION_INDEX = (int *)mod_ipc_ler_int(h, 0);
+    /* O dispatcher guarda em DAT_20353438 so se estiver em [1,6]. */
+}
+
+/* ---- Patches de valor / opcode (FUN_20225730, RVA 0x55730) ---- */
+
+/*
+ * Escritores de memoria (primitivos):
+ *   mod_escrever_byte  -- FUN_20245f30  (RVA 0x75F30)
+ *   mod_escrever_word  -- FUN_20246300  (RVA 0x76300)
+ *   mod_escrever_dword -- FUN_202460c0  (RVA 0x760C0)
+ *   mod_escrever_float -- FUN_20246230  (RVA 0x76230)
+ * Todos: VirtualProtect -> escreve -> restaura.  Verificam base_pb <= alvo.
+ */
+extern void mod_escrever_byte (uint8_t  valor, uint8_t *alvo, int flags); /* FUN_20245f30 */
+extern void mod_escrever_word (uint16_t valor, uint8_t *alvo, int flags); /* FUN_20246300 */
+extern void mod_escrever_dword(uint32_t valor, uint8_t *alvo, int flags); /* FUN_202460c0 */
+extern void mod_escrever_float(float    valor, uint8_t *alvo, int flags); /* FUN_20246230 */
+
+/* base_pb: base do PointBlank.exe (0x00400000), lida em DAT_2037d2f8.      */
+extern uint8_t *g_base_pb;     /* DAT_2037d2f8 */
+
+/* Estado "ja aplicado" dos patches one-shot. */
+extern char g_cross_one_shot;   /* DAT_2037e483 */
+extern char g_loadingmap_done;  /* DAT_2037e6c4 */
+extern char g_minimap_done;     /* DAT_2037e674 */
+
+/* Ponteiro para o endereco-alvo do LOADINGMAP (resolvido em tempo de execucao). */
+extern uint8_t *g_loadingmap_ptr; /* DAT_2037e468 */
+
+/* Base dos calculos de endereco do MINIMAP e CROSS. */
+extern uint8_t *g_base_cross;   /* DAT_2037e43c (base para +0x100840 e +0x59134) */
+extern uint8_t *g_base_fps;     /* DAT_2037e450 + DAT_2037d300 (base para +0x500141) */
+
+/* Offset calculado por sscanf (resultado de mod_patch_fps / mod_patch_cross). */
+static uint32_t mod_sscanf_off(const char *s) { uint32_t v; sscanf(s, "%x", &v); return v; }
+
+/*
+ * mod_patch_fps  --  FUN_20225640 @ RVA 0x55640
+ *
+ * Escreve o valor de FPS em base_pb + 0x500141.
+ * A tabela de valores: indices 1..6 => 9999; fora da faixa => 360 (0x168).
+ * O offset "0x500141" esta cifrado no binario como texto ASCII (XOR por
+ * registo), decodificado em tempo de execucao via sscanf("%x").
+ */
+static void mod_patch_fps(uint32_t fps_value)
+{
+    mod_escrever_dword(fps_value, g_base_fps + 0x500141, 0);
+}
+
+/*
+ * mod_patch_interface  --  FUN_20225580 @ RVA 0x55580
+ *
+ * Escreve um float em base_pb + 0x212153.
+ * Ligado (INTERFACE=1): 999.0  (remove o teto de tempo de frame).
+ * Desligado          : FLT_MIN (1.175494351E-38, restaura o comportamento padrao).
+ */
+static void mod_patch_interface(int ligado)
+{
+    float v = ligado ? 999.0f : 1.175494351E-38f;
+    mod_escrever_float(v, g_base_pb + 0x212153, 0);
+}
+
+/*
+ * mod_patch_cross  --  parte de FUN_20225730 / FUN_20220b40 @ RVA 0x50B40
+ *
+ * Altera um byte de opcode em base_cross + 0x100840:
+ *   Ligado (CROSS=1): 0xEB (JMP curto incondicional) -- forca exibicao da mira.
+ *   Desligado       : 0x74 (JZ  curto condicional)   -- restaura a condicional.
+ */
+static void mod_patch_cross(int ligado)
+{
+    mod_escrever_byte(ligado ? 0xEB : 0x74, g_base_cross + 0x100840, 0);
+}
+
+/*
+ * mod_patch_loadingmap  --  parte de FUN_20225730 (ramo LOADINGMAP, one-shot)
+ *
+ * Escreve 0xC98B (= bytes 8B C9 = MOV ECX,ECX, no-op de 2 bytes) na
+ * instrucao alvo do mapa de carregamento.  Executa apenas uma vez por sessao
+ * (g_loadingmap_done impede reaplicacao).
+ */
+static void mod_patch_loadingmap(void)
+{
+    if (g_loadingmap_done) return;
+    if (!g_loadingmap_ptr) return;
+    g_loadingmap_done = 1;
+    mod_escrever_word(0xC98B, g_loadingmap_ptr, 0);
+    g_loadingmap_ptr = NULL;
+}
+
+/*
+ * mod_patch_minimap  --  parte de FUN_20225730 (ramo REMOVE_MINIMAP, one-shot)
+ *
+ * Escreve o byte 4 em g_base_cross + 0x59134.
+ * Aguarda ~1 s (GetTickCount64) antes de aplicar.
+ * Executa apenas uma vez (g_minimap_done).
+ */
+static void mod_patch_minimap(void)
+{
+    static ULONGLONG t0;
+    if (g_minimap_done) return;
+    if (!g_base_pb || !g_base_cross) return;
+    if (t0 == 0) { t0 = GetTickCount64(); return; }
+    if ((GetTickCount64() - t0) < 1000) return;
+    g_minimap_done = 1;
+    mod_escrever_byte(4, g_base_cross + 0x59134, 0);
+}
+
+/*
+ * mod_patches_aplicar  --  FUN_20225bc0 @ RVA 0x55BC0
+ *                           + FUN_20225730 @ RVA 0x55730 (corpo principal)
+ *
+ * Chamado a cada frame pelo loop principal do modulo.
+ * Aplica todos os patches de valor/opcode: FPS, CROSS, INTERFACE,
+ * LOADINGMAP e REMOVE_MINIMAP.
+ */
+void mod_patches_aplicar(void)
+{
+    /* FPS: tabela todos-9999 para indices 1..6; 360 para fora da faixa. */
+    int fps_idx = (int)(intptr_t)g_mod_FPS_SELECTION_INDEX;
+    uint32_t fps_val = (fps_idx >= 1 && fps_idx <= 6) ? 9999 : 360;
+    mod_patch_fps(fps_val);
+
+    /* CROSS: patch de opcode (JMP vs JZ). */
+    mod_patch_cross(g_mod_CROSS);
+
+    /* INTERFACE: troca o float de teto de frame. */
+    mod_patch_interface(g_mod_INTERFACE);
+
+    /* LOADINGMAP: one-shot no-op. */
+    if (g_mod_LOADINGMAP) mod_patch_loadingmap();
+
+    /* REMOVE_MINIMAP: one-shot com delay. */
+    if (g_mod_REMOVE_MINIMAP) mod_patch_minimap();
+}
+
+/* ---- Fluidez Maxima: detour inline (FUN_20225410 / 20225030 / 20225170) ---- */
+
+/* Stub de 14 bytes que o modulo esconde na folga do cabecalho PE do jogo
+ * (g_base_pb + 0x800 = 0x400800):
+ *
+ *   F3 0F 10 4B 08              MOVSS XMM1, [EBX+0x08]
+ *   F3 0F 59 0D 00 04 40 00     MULSS XMM1, [0x00400400]   ; multiplicador
+ *   C3                          RET
+ *
+ * O multiplicador fica em g_base_pb + 0x400 (= 0x400400), atualizado a cada
+ * frame por mod_graphic_atualizar_multiplicador.
+ *
+ * Imediatos confirmados contra o decompilado de FUN_20225410:
+ *   local_24 = 0x4b100ff3  local_20 = 0x590ff308
+ *   local_1c = 0x4004000d  local_18 = 0xc300
+ */
+static const uint8_t k_graphic_stub[14] = {
+    0xF3, 0x0F, 0x10, 0x4B, 0x08,               /* MOVSS XMM1, [EBX+0x08] */
+    0xF3, 0x0F, 0x59, 0x0D,
+    0x00, 0x04, 0x40, 0x00,                      /* &[0x00400400]           */
+    0xC3                                          /* RET                     */
+};
+
+static char g_graphic_stub_instalado;            /* DAT_2037d230 */
+static char g_graphic_detour_instalado;          /* DAT_2037d231 */
+
+/* Multiplicador corrente (DAT_203403e8); alvo gradual (DAT_2036c128 = 1.038);
+ * maximo efetivo (DAT_2036c124 = 1.1 por padrao, ate 1.23).               */
+extern float g_graphic_mult;      /* DAT_203403e8 */
+extern float g_graphic_alvo;      /* DAT_2036c128 */
+extern float g_graphic_max;       /* DAT_2036c124 */
+
+/*
+ * mod_graphic_instalar_detour  --  parte de FUN_20225410 @ RVA 0x55410
+ *
+ * Passo 1 (one-shot): copia os 14 bytes do stub para g_base_pb + 0x800.
+ * Passo 2 (one-shot): instala o CALL rel32 em g_base_pb + 0x10854.
+ */
+static void mod_graphic_instalar_detour(void)
+{
+    if (!g_graphic_stub_instalado) {
+        uint8_t *dst = g_base_pb + 0x800;
+        DWORD old;
+        VirtualProtect(dst, 14, PAGE_EXECUTE_READWRITE, &old);
+        for (int i = 0; i < 14; i++) dst[i] = k_graphic_stub[i];
+        VirtualProtect(dst, 14, old, &old);
+        g_graphic_stub_instalado = 1;
+    }
+    if (!g_graphic_detour_instalado) {
+        mod_instalar_detour(g_base_pb + 0x10854, g_base_pb + 0x800);
+        g_graphic_detour_instalado = 1;
+    }
+}
+
+/*
+ * mod_graphic_ramp  --  FUN_20225030 @ RVA 0x55030
+ *
+ * A cada ~200 ms, quando GRAPHIC esta ligado e o jogo esta em condicao
+ * valida (FUN_20220570 != 0), sobe g_graphic_mult +0.005 ate g_graphic_max.
+ * Quando GRAPHIC esta desligado, reseta para 1.0.
+ *
+ * Max configuravel: DAT_20373c48, clampado para [1.0, 1.23]; default 1.1.
+ * Alvo configuravel: DAT_20342664, clampado da mesma forma; default 1.038.
+ * A subida gradual evita que a mudanca apareca como salto instantaneo.
+ */
+void mod_graphic_ramp(void)
+{
+    static ULONGLONG t_ultimo;
+
+    /* Inicializa limites (logica de FUN_20225030 simplificada). */
+    if (g_graphic_max < 1.0f || g_graphic_max > 1.23f) g_graphic_max = 1.1f;
+    if (g_graphic_alvo < 1.0f || g_graphic_alvo > 1.23f) g_graphic_alvo = 1.038f;
+
+    if (g_mod_GRAPHIC == 1) {
+        ULONGLONG agora = GetTickCount64();
+        if ((agora - t_ultimo) >= 200) {
+            t_ultimo = agora;
+            if (g_graphic_mult < g_graphic_max) {
+                g_graphic_mult += 0.005f;
+                if (g_graphic_mult > g_graphic_max)
+                    g_graphic_mult = g_graphic_max;
+            }
+        }
+    } else {
+        g_graphic_mult = 1.0f;
+    }
+}
+
+/*
+ * mod_graphic_aplicar  --  FUN_20225410 @ RVA 0x55410  (chamado a cada frame)
+ *
+ * 1. Instala o stub e o detour (one-shot).
+ * 2. Sobe ou reseta o multiplicador (mod_graphic_ramp equivalente inline).
+ * 3. Se o multiplicador mudou, escreve o novo valor em g_base_pb + 0x400.
+ */
+void mod_graphic_aplicar(void)
+{
+    static float mult_anterior;
+
+    mod_graphic_instalar_detour();
+    mod_graphic_ramp();
+
+    if (g_graphic_mult != mult_anterior) {
+        mult_anterior = g_graphic_mult;
+        mod_escrever_float(g_graphic_mult, g_base_pb + 0x400, 0);
+    }
+}
+
+/* ---- Overlay de mira (FUN_20232e80, RVA 0x62E80) -- sumario ---- */
+
+/*
+ * mod_overlay_atualizar  --  FUN_20232e80 @ RVA 0x62E80  (simplificado)
+ *
+ * Chamado a cada frame pelo loop de render ImGui.
+ * Le os globals de configuracao e preenche a estrutura de estado do overlay
+ * (DAT_2037e8a0 e seguintes) que o renderer ImGui usa para desenhar:
+ *   - contador de FPS, CPU, GPU, RAM, ping
+ *   - mira customizada (CROSS, cor, tamanho, sombra)
+ *   - posicao do contador de FPS
+ *
+ * Nenhum patch de codigo e feito aqui: o overlay e desenhado POR CIMA,
+ * sem tocar no codigo do jogo (ponto_blank.md 2.27 "Classe overlay").
+ *
+ * INFERIDO: a estrutura em DAT_2037e8a0 e um OverlayState passado por
+ * referencia para o render ImGui.  Os campos abaixo foram lidos do
+ * decompilado de FUN_20232e80 no Ghidra (offset confirmado por atribuicao).
+ */
+typedef struct {
+    /* 0x00 */ uint8_t  cross_enable;        /* uRam2037e920 bit 0 */
+    /* 0x01 */ uint8_t  _pad0;
+    /* 0x02 */ uint16_t display_ram;         /* uRam2037e8a2 */
+    /* 0x06 */ uint8_t  crosshair_shadow;    /* DAT_2037d2bf */
+    /* ...   campos display_*, HUD_*, etc. omitidos */
+    /* 0x28 */ float    fps_counter_x;       /* fRam2037d2fc */
+    /* 0x2c */ float    fps_counter_y;       /* fRam2037d2f0 */
+    /* 0x30 */ uint32_t crosshair_color;     /* uRam2037e5f4 -- ARGB da tabela de cores */
+    /* 0x34 */ uint32_t crosshair_size;      /* DAT_2037d310 */
+    /* 0x38 */ uint32_t crosshair_space;     /* DAT_2037d314 */
+    /* 0x3c */ uint32_t crosshair_squar;     /* DAT_2037d324 */
+    /* 0x40 */ uint32_t crosshair_thickness; /* DAT_2037d328 */
+    /* 0x44 */ uint32_t crosshair_shadow_v;  /* DAT_2037d31c */
+    /* 0x48 */ uint32_t crosshair_shadow_h;  /* DAT_2037d320 */
+} TModOverlayState;
+
+/* Tabela de cores da mira (ARGB, indice 1..6):
+ *   1=vermelho, 2=verde, 3=violeta, 4=azul, 5=amarelo, 6=branco.
+ * Extraida de FUN_20235980 (bloco if/else para DAT_2037e46c). */
+static const uint32_t k_mod_cores_crosshair[7] = {
+    0,            /* [0] nunca usado */
+    0xffff0000,   /* [1] vermelho */
+    0xff00ff00,   /* [2] verde    */
+    0xff8000ff,   /* [3] violeta  */
+    0xff0000ff,   /* [4] azul     */
+    0xffffff00,   /* [5] amarelo  */
+    0xffffffff,   /* [6] branco   */
+};
 
 
 /* ============================================================================
