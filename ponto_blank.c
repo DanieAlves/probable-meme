@@ -4239,6 +4239,101 @@ void pb_fonte_personalizada_escrever_ini(void)
 /* ---- Tipos e helpers de baixo nivel do modulo ---- */
 #include <windows.h>   /* HWND, FindWindowA, FindWindowExA, SendMessageA */
 #include <stdio.h>     /* sscanf */
+#include <stdint.h>    /* uint8_t, uint16_t, uint32_t */
+
+/* ---- Globals de estado do modulo ---- */
+
+/* Base do PointBlank.exe (0x00400000), resolvida pelo loader na inicializacao.
+ * DAT_2037d2f8 no dump.  Todos os patches sao relativizados a este endereco. */
+uint8_t *g_base_pb     = NULL;   /* DAT_2037d2f8 -- definido na inicializacao */
+uint8_t *g_base_cross  = NULL;   /* DAT_2037e43c -- base para CROSS e MINIMAP  */
+uint8_t *g_base_fps    = NULL;   /* DAT_2037e450 -- base para FPS               */
+uint8_t *g_loadingmap_ptr = NULL;/* DAT_2037e468 -- ponteiro alvo do LOADINGMAP */
+
+/* Flags one-shot */
+char g_cross_one_shot   = 0;     /* DAT_2037e483 */
+char g_loadingmap_done  = 0;     /* DAT_2037e6c4 */
+char g_minimap_done     = 0;     /* DAT_2037e674 */
+
+/* Multiplicador de Fluidez Maxima */
+float g_graphic_mult  = 1.0f;   /* DAT_203403e8 */
+float g_graphic_alvo  = 1.038f; /* DAT_2036c128 */
+float g_graphic_max   = 1.1f;   /* DAT_2036c124 */
+
+/* Configuracoes lidas por IPC */
+int   g_mod_FPSENABLE           = 0;
+int   g_mod_DISPLAY_FPS         = 0;
+int   g_mod_DISPLAY_RAM         = 0;
+int   g_mod_DISPLAY_CPU         = 0;
+int   g_mod_DISPLAY_GPU         = 0;
+int   g_mod_DISPLAY_PING        = 0;
+int   g_mod_DISPLAY_TIME        = 0;
+int   g_mod_DISPLAY_HORZ        = 0;
+int   g_mod_FPS_COUNTER_POSITION= 0;
+int  *g_mod_FPS_SELECTION_INDEX = NULL;
+int   g_mod_CROSS               = 0;
+int   g_mod_CROSSHAIR_SIZE_LINE = 0;
+int   g_mod_CROSSHAIR_SPACE     = 0;
+int   g_mod_CROSSHAIR_SQUAR     = 0;
+int  *g_mod_CROSSHAIR_COLOR     = NULL;
+int   g_mod_CROSSHAIR_THICKNESS = 0;
+int   g_mod_CROSSHAIR_SHADOW    = 1;
+int   g_mod_GRAPHIC             = 0;
+int   g_mod_INTERFACE           = 0;
+int   g_mod_LOADINGMAP          = 0;
+int   g_mod_REMOVE_MINIMAP      = 0;
+
+/* ---- Primitivos de escrita na memoria do jogo ---- */
+/*
+ * Todos os quatro seguem a mesma logica de FUN_20245f30 / FUN_20246300 etc.:
+ *   1. Verifica piso de seguranca: alvo >= g_base_pb.
+ *   2. VirtualProtect(alvo, 8, PAGE_EXECUTE_READWRITE, &old).
+ *   3. Escreve o valor.
+ *   4. VirtualProtect(alvo, 8, old, &old).
+ *
+ * O parametro `flags` existe no original (controle interno de log/trace),
+ * mas nao altera o comportamento de escrita -- passado como 0 em todos os
+ * chamadores reconstruidos.
+ */
+void mod_escrever_byte(uint8_t valor, uint8_t *alvo, int flags)
+{
+    DWORD old;
+    (void)flags;
+    if (!g_base_pb || alvo < g_base_pb) return;
+    VirtualProtect(alvo, 8, PAGE_EXECUTE_READWRITE, &old);
+    *alvo = valor;
+    VirtualProtect(alvo, 8, old, &old);
+}
+
+void mod_escrever_word(uint16_t valor, uint8_t *alvo, int flags)
+{
+    DWORD old;
+    (void)flags;
+    if (!g_base_pb || alvo < g_base_pb) return;
+    VirtualProtect(alvo, 8, PAGE_EXECUTE_READWRITE, &old);
+    *(uint16_t *)alvo = valor;
+    VirtualProtect(alvo, 8, old, &old);
+}
+
+void mod_escrever_dword(uint32_t valor, uint8_t *alvo, int flags)
+{
+    DWORD old;
+    (void)flags;
+    if (!g_base_pb || alvo < g_base_pb) return;
+    VirtualProtect(alvo, 8, PAGE_EXECUTE_READWRITE, &old);
+    *(uint32_t *)alvo = valor;
+    VirtualProtect(alvo, 8, old, &old);
+}
+
+void mod_escrever_float(float valor, uint8_t *alvo, int flags)
+{
+    DWORD old;
+    (void)flags;
+    if (!g_base_pb || alvo < g_base_pb) return;
+    VirtualProtect(alvo, 8, PAGE_EXECUTE_READWRITE, &old);
+    *(float *)alvo = valor;
+    VirtualProtect(alvo, 8, old, &old);
+}
 
 /* Instalador de detour inline: escreve CALL rel32 (5 bytes) em target,
  * apontando para stub.
@@ -4323,30 +4418,9 @@ static int mod_ipc_ler_int(HWND filha, int padrao)
 /*
  * Globals de configuracao lidos do painel (um por chave, ver lista em
  * ponto_blank.md 2.27 "Etapa 2").  Nomenclatura: g_mod_<CHAVE>.
- * Declarados como globais do modulo; os tipos refletem o retorno do
- * primitivo de leitura usado (bool/int).
+ * Definidos acima; as declaracoes originais de extern foram substituidas
+ * pelas definicoes reais.
  */
-extern int   g_mod_FPSENABLE;           /* DAT_2037d27c  -- bool */
-extern int   g_mod_DISPLAY_FPS;         /* DAT_2037e4b8  -- bool */
-extern int   g_mod_DISPLAY_RAM;         /* DAT_2037d228  -- bool */
-extern int   g_mod_DISPLAY_CPU;         /* DAT_2037d330  -- bool */
-extern int   g_mod_DISPLAY_GPU;         /* DAT_2037e454  -- bool */
-extern int   g_mod_DISPLAY_PING;        /* DAT_2037e424  -- bool */
-extern int   g_mod_DISPLAY_TIME;        /* DAT_2037e4a4  -- bool */
-extern int   g_mod_DISPLAY_HORZ;        /* DAT_2037d458  -- bool */
-extern int   g_mod_FPS_COUNTER_POSITION;/* DAT_2037e49c  -- bool */
-extern int  *g_mod_FPS_SELECTION_INDEX; /* puRam2037e438 -- int* */
-extern int   g_mod_CROSS;              /* DAT_2037d2e4  -- bool */
-extern int   g_mod_CROSSHAIR_SIZE_LINE; /* DAT_2037d2d8  -- int */
-extern int   g_mod_CROSSHAIR_SPACE;     /* DAT_2037d29c  -- int */
-extern int   g_mod_CROSSHAIR_SQUAR;     /* DAT_2037d238  -- int */
-extern int  *g_mod_CROSSHAIR_COLOR;     /* DAT_2037e46c  -- int (1..6) */
-extern int   g_mod_CROSSHAIR_THICKNESS; /* DAT_2037d44c  -- int */
-extern int   g_mod_CROSSHAIR_SHADOW;    /* DAT_2037d218  -- bool */
-extern int   g_mod_GRAPHIC;             /* DAT_2037e4a0  -- bool */
-extern int   g_mod_INTERFACE;           /* DAT_2037d224  -- bool */
-extern int   g_mod_LOADINGMAP;          /* DAT_2037e470  -- bool */
-extern int   g_mod_REMOVE_MINIMAP;      /* DAT_2037d2f4  -- bool */
 /* demais chaves (BORDER_LESS, RESOLUTION, HUD_*, WEAPON_*, etc.) omitidas */
 
 /*
@@ -4444,32 +4518,9 @@ void mod_settings_ler(void)
 /* ---- Patches de valor / opcode (FUN_20225730, RVA 0x55730) ---- */
 
 /*
- * Escritores de memoria (primitivos):
- *   mod_escrever_byte  -- FUN_20245f30  (RVA 0x75F30)
- *   mod_escrever_word  -- FUN_20246300  (RVA 0x76300)
- *   mod_escrever_dword -- FUN_202460c0  (RVA 0x760C0)
- *   mod_escrever_float -- FUN_20246230  (RVA 0x76230)
- * Todos: VirtualProtect -> escreve -> restaura.  Verificam base_pb <= alvo.
+ * Escritores de memoria (primitivos): definidos acima junto com os globals.
+ * FUN_20245f30 (byte), FUN_20246300 (word), FUN_202460c0 (dword), FUN_20246230 (float).
  */
-extern void mod_escrever_byte (uint8_t  valor, uint8_t *alvo, int flags); /* FUN_20245f30 */
-extern void mod_escrever_word (uint16_t valor, uint8_t *alvo, int flags); /* FUN_20246300 */
-extern void mod_escrever_dword(uint32_t valor, uint8_t *alvo, int flags); /* FUN_202460c0 */
-extern void mod_escrever_float(float    valor, uint8_t *alvo, int flags); /* FUN_20246230 */
-
-/* base_pb: base do PointBlank.exe (0x00400000), lida em DAT_2037d2f8.      */
-extern uint8_t *g_base_pb;     /* DAT_2037d2f8 */
-
-/* Estado "ja aplicado" dos patches one-shot. */
-extern char g_cross_one_shot;   /* DAT_2037e483 */
-extern char g_loadingmap_done;  /* DAT_2037e6c4 */
-extern char g_minimap_done;     /* DAT_2037e674 */
-
-/* Ponteiro para o endereco-alvo do LOADINGMAP (resolvido em tempo de execucao). */
-extern uint8_t *g_loadingmap_ptr; /* DAT_2037e468 */
-
-/* Base dos calculos de endereco do MINIMAP e CROSS. */
-extern uint8_t *g_base_cross;   /* DAT_2037e43c (base para +0x100840 e +0x59134) */
-extern uint8_t *g_base_fps;     /* DAT_2037e450 + DAT_2037d300 (base para +0x500141) */
 
 /* Offset calculado por sscanf (resultado de mod_patch_fps / mod_patch_cross). */
 static uint32_t mod_sscanf_off(const char *s) { uint32_t v; sscanf(s, "%x", &v); return v; }
@@ -4601,10 +4652,8 @@ static char g_graphic_stub_instalado;            /* DAT_2037d230 */
 static char g_graphic_detour_instalado;          /* DAT_2037d231 */
 
 /* Multiplicador corrente (DAT_203403e8); alvo gradual (DAT_2036c128 = 1.038);
- * maximo efetivo (DAT_2036c124 = 1.1 por padrao, ate 1.23).               */
-extern float g_graphic_mult;      /* DAT_203403e8 */
-extern float g_graphic_alvo;      /* DAT_2036c128 */
-extern float g_graphic_max;       /* DAT_2036c124 */
+ * maximo efetivo (DAT_2036c124 = 1.1 por padrao, ate 1.23).
+ * Definidos acima junto com os outros globals do modulo.                    */
 
 /*
  * mod_graphic_instalar_detour  --  parte de FUN_20225410 @ RVA 0x55410
@@ -4731,6 +4780,86 @@ static const uint32_t k_mod_cores_crosshair[7] = {
     0xffffffff,   /* [6] branco   */
 };
 
+
+/* ---- Inicializacao: resolve a base do PointBlank.exe ---- */
+
+/*
+ * mod_resolver_bases  --  parte do loader do modulo (sem RVA unico; logica
+ *                         distribuida entre o inicializador de thread e
+ *                         FUN_20245cc0 @ RVA 0x75CC0).
+ *
+ * O modulo original resolve g_base_pb buscando o MZ do PointBlank.exe via
+ * GetModuleHandleA("PointBlank.exe") ou escaneando a lista de modulos do
+ * processo.  Aqui usamos GetModuleHandleA, que e suficiente quando injetado.
+ * g_base_cross e g_base_fps recebem o mesmo valor (na pratica sao aliases
+ * para a base do .exe; os offsets diferenciam o alvo real).
+ */
+static int mod_resolver_bases(void)
+{
+    HMODULE hpb = GetModuleHandleA("PointBlank.exe");
+    if (!hpb) return 0;
+    g_base_pb    = (uint8_t *)hpb;
+    g_base_cross = (uint8_t *)hpb;
+    g_base_fps   = (uint8_t *)hpb;
+    return 1;
+}
+
+/* ---- Thread principal do modulo ---- */
+
+/*
+ * mod_thread  --  loop principal injetado no processo do PointBlank.exe.
+ *
+ * Replica o comportamento observado no dump:
+ *   1. Aguarda o jogo terminar de carregar (GetModuleHandleA polling).
+ *   2. Resolve as bases.
+ *   3. Loop a cada ~16 ms (~60 Hz):
+ *        a. Le configuracoes do painel (IPC).
+ *        b. Aplica patches de valor/opcode.
+ *        c. Atualiza Fluidez Maxima (detour + ramp).
+ *
+ * O intervalo de 16 ms e uma aproximacao; o original usa um mecanismo de
+ * sincronizacao com o render loop do jogo (nao reconstruido aqui).
+ */
+static DWORD WINAPI mod_thread(LPVOID param)
+{
+    (void)param;
+
+    /* Aguarda PointBlank.exe estar carregado (ate 30 s). */
+    for (int i = 0; i < 300; i++) {
+        if (GetModuleHandleA("PointBlank.exe")) break;
+        Sleep(100);
+    }
+
+    if (!mod_resolver_bases()) return 1;
+
+    while (1) {
+        mod_settings_ler();
+        mod_patches_aplicar();
+        if (g_mod_GRAPHIC) mod_graphic_aplicar();
+        Sleep(16);
+    }
+    return 0;
+}
+
+/* ---- DllMain ---- */
+
+/*
+ * DllMain  --  ponto de entrada da DLL injetada.
+ *
+ * Em DLL_PROCESS_ATTACH: cria a thread principal.
+ * Os outros eventos (THREAD_ATTACH, DETACH, PROCESS_DETACH) sao ignorados;
+ * o modulo original tambem nao registra cleanup -- e descarregado pelo
+ * processo ao encerrar.
+ */
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
+{
+    (void)lpvReserved;
+    if (fdwReason == DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(hinstDLL);
+        CloseHandle(CreateThread(NULL, 0, mod_thread, NULL, 0, NULL));
+    }
+    return TRUE;
+}
 
 /* ============================================================================
  *  FIM. Para o catalogo completo de comandos do otimizador ver:
